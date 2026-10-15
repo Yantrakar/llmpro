@@ -247,3 +247,9 @@ The user approved all three on 2026-10-16 ("ok go ahead"):
 - D1. `sync` runs without asking (§3.2).
 - D2. The hub is renamed to ~/.agents-data.git at switch-over (§9 5d).
 - D3. The command is `agentspro`, with no short alias (`ag` is the silver searcher).
+- D4. Direction (the user, 2026-10-16): agentspro is the go-to tool for working with AI and LLMs. Its jobs
+  are to share skills, memory and history, and to protect against secret and identity leaks. It takes in
+  gitpro, and later other helpers (code versioning and more), behind one command line, one MCP server and
+  one skill. gitpro stays installable and usable on its own ("it can remain like this. but agentpro can
+  swallow it and become a goto tool, mcp, skiil, code versioning tools helper etc"). How it takes gitpro
+  in is not decided yet.
