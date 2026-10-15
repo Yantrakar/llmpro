@@ -18,6 +18,20 @@ def build_parser():
 
     s = sub.add_parser('sync', parents=[common], help='import, commit, and exchange commits with the hub')
     s.add_argument('--local', action='store_true', help='import and commit only; no fetch, merge or push')
+    s.add_argument('-n', '--dry-run', action='store_true',
+                   help='show what a sync would do (no login, no fetch); changes nothing')
+    s.add_argument('--json', action='store_true', help='with -n: result as JSON')
+
+    t = sub.add_parser('setup', parents=[common], help='set up this machine, or show what is missing')
+    t.add_argument('-n', '--dry-run', action='store_true', help='show the state of each item; exit 1 if one is missing')
+    t.add_argument('-y', '--yes', action='store_true', help='do not ask')
+    t.add_argument('--hub', metavar='URL', help='clone the store from this hub when there is none')
+    t.add_argument('--json', action='store_true', help='with -n: result as JSON')
+
+    u = sub.add_parser('uninstall', parents=[common], help='take agentspro off this machine (the store is kept)')
+    u.add_argument('-n', '--dry-run', action='store_true', help='show what would be removed')
+    u.add_argument('-y', '--yes', action='store_true', help='do not ask')
+    u.add_argument('--json', action='store_true', help='with -n: result as JSON')
 
     c = sub.add_parser('check', parents=[common], help='secret check over the store')
     g = c.add_mutually_exclusive_group()
@@ -64,9 +78,17 @@ def run(argv):
     store = cfg.locate(getattr(args, 'store', None))
     if getattr(args, 'quiet', False):
         cfg.QUIET[0] = True
+    if args.cmd in ('setup', 'uninstall'):
+        from . import setup
+        quiet = getattr(args, 'quiet', False)
+        if args.cmd == 'setup':
+            return setup.setup(store, dry_run=args.dry_run, yes=args.yes, hub=args.hub, as_json=args.json, quiet=quiet)
+        return setup.uninstall(store, dry_run=args.dry_run, yes=args.yes, as_json=args.json, quiet=quiet)
     if args.cmd == 'sync':
         cfg.configure(store)
         from . import sync
+        if args.dry_run:
+            return sync.dry_run(store, as_json=args.json)
         return sync.run(store, local=args.local, quiet=getattr(args, 'quiet', False))
     if args.cmd == 'check':
         return do_check(args, store)

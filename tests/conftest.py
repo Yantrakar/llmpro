@@ -28,3 +28,35 @@ def store(home):
     (d / '.gitignore').write_text('sessions/\nlocal/\n')
     yield str(d)
     cfg.LOCAL_ONLY[:] = []
+
+
+@pytest.fixture
+def onpath(monkeypatch):
+    """Hooks and the merge driver run `agentspro`: put the one that belongs to this Python on PATH."""
+    import sys
+    monkeypatch.setenv('PATH', os.path.dirname(sys.executable) + os.pathsep + os.environ['PATH'])
+
+
+@pytest.fixture
+def machine(home, monkeypatch):
+    """A temporary HOME with fake tool folders, and no tool running."""
+    from agentspro import setup
+    monkeypatch.setattr(setup, 'running_tools', lambda: [])
+    monkeypatch.setenv('XDG_STATE_HOME', str(home / 'state'))
+
+    def put(rel, text='x\n'):
+        p = home / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+
+    put('.claude/projects/p1/s1.jsonl', '{"a": 1}\n')
+    put('.claude/file-history/f1', 'old\n')
+    put('.claude/CLAUDE.md', '# mine\nkeep this')  # no trailing newline
+    put('.claude/settings.json', '{"fake": true}\n')
+    put('.codex/sessions/2026/r1.jsonl', '{}\n')
+    put('.codex/AGENTS.md', 'codex rules\n')
+    put('.codex/auth.json', '{"fake": "not a real credential"}\n')
+    put('.copilot/session-state/a/events.jsonl', '{}\n')
+    put('.local/share/opencode/opencode.db', 'not a database')
+    (home / '.config/opencode').mkdir(parents=True)
+    return home

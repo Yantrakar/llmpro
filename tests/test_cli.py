@@ -15,10 +15,6 @@ def test_unknown_flag_exits_2(capsys):
     assert cli.main(['sync', '--nope']) == 2
 
 
-def test_sync_rejects_dry_run_for_now(capsys):
-    assert cli.main(['sync', '-n']) == 2
-
-
 def test_check_passes_on_empty_store(store, capsys):
     assert cli.main(['check', '--store', store]) == 0
     assert 'passed' in capsys.readouterr().out
