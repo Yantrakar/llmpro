@@ -210,6 +210,9 @@ def hooks_path_is_old(value):
     return value is not None and value.rstrip('/').endswith('tools/hooks')
 
 
+OLD_HOOKS_PATH = 'core.hooksPath still points at tools/hooks'
+
+
 def git_settings_missing(store):
     """-> the names of the git settings that are not as setup wants them (empty: all in place)."""
     if store_state(store) != 'present':
@@ -229,7 +232,7 @@ def git_settings_missing(store):
     if config_get(store, 'merge.ours.driver') != 'true':
         missing.append('merge.ours.driver')
     if hooks_path_is_old(config_get(store, 'core.hooksPath')):
-        missing.append('core.hooksPath (points at tools/hooks)')
+        missing.append(OLD_HOOKS_PATH)
     return missing
 
 
@@ -240,7 +243,13 @@ def survey_settings(store):
     missing = git_settings_missing(store)
     if not missing:
         return Item('git settings', False, 'present', ['hooks, merge drivers'])
-    return Item('git settings', True, 'missing', missing, ['set in the store: ' + ', '.join(missing)])
+    todo = []
+    to_set = [m for m in missing if m != OLD_HOOKS_PATH]
+    if to_set:
+        todo.append('set in the store: ' + ', '.join(to_set))
+    if OLD_HOOKS_PATH in missing:
+        todo.append('unset core.hooksPath in the store (it points at the old tools/hooks)')
+    return Item('git settings', True, 'missing', missing, todo)
 
 
 def apply_settings(store, undo):

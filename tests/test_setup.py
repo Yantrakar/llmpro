@@ -139,6 +139,9 @@ def test_undo_restores_existing_hooks_and_hookspath(machine, capsys, onpath, sto
     os.chmod(hook, 0o750)
     code, out, err = run(['setup', '-y', '--store', store], capsys)
     assert code == 0, err
+    said = out + err
+    assert 'unset core.hooksPath' in said and 'set in the store: hook pre-commit' in said
+    assert 'core.hooksPath' not in said.split('set in the store:')[1].split('\n')[0]  # never listed as a thing to set
     assert subprocess.run(['git', '-C', store, 'config', 'core.hooksPath'], capture_output=True).returncode != 0
     assert 'agentspro hook' in open(hook).read()
     subprocess.run(['sh', undo_path(out)], check=True)
