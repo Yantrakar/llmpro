@@ -42,6 +42,22 @@ def build_parser():
     c.add_argument('--no-cache', action='store_true', help='do not use the caches in .git/agentspro')
     c.add_argument('--jobs', type=int, default=None, help='worker processes')
     c.add_argument('--part', type=int, choices=(1, 2), default=None, help='run only part 1 or part 2')
+    c.add_argument('--near-miss', action='store_true',
+                   help='instead: list strings that look like secrets but were not flagged (a review aid; exit 0)')
+    c.add_argument('--top', type=int, default=100, help='with --near-miss: groups to print (0 = all)')
+    c.add_argument('--fix', action='store_true', help='rebuild memory/INDEX.md (nothing else is fixed)')
+
+    f = sub.add_parser('find', parents=[common], help='search past chats and memories')
+    f.add_argument('query', nargs='+', metavar='QUERY', help='words; all must occur in the same file')
+    f.add_argument('--machine', metavar='M', help='only this machine (a memory: this scope)')
+    f.add_argument('--tool', metavar='T', help='only this tool (leaves memories out)')
+    f.add_argument('--since', metavar='YYYY-MM-DD', help='only on or after this date')
+    g = f.add_mutually_exclusive_group()
+    g.add_argument('--memory', action='store_true', help='memories only')
+    g.add_argument('--history', action='store_true', help='conversations only')
+    f.add_argument('--json', action='store_true', help='result as JSON')
+
+    sub.add_parser('mcp', parents=[common], help='serve find, check and sync_status to assistants over stdio (MCP)')
 
     m = sub.add_parser('summary', parents=[common], help='set the summary at the top of a conversation')
     m.add_argument('conv', nargs='?', help='conversation id or file')
@@ -55,11 +71,23 @@ def do_check(args, store):
     import io
     import json
     from . import check
+    if args.near_miss:
+        if args.staged or args.history or args.fix:
+            print('--near-miss cannot be combined with --staged, --history or --fix', file=sys.stderr)
+            return 2
+        from . import nearmiss
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf) if args.json else contextlib.nullcontext():
+            nearmiss.run(store, top=args.top, context=args.context, jobs=args.jobs)
+        if args.json:
+            print(json.dumps({'passed': True, 'exit': 0, 'output': buf.getvalue().splitlines()}))
+        return 0
     buf = io.StringIO()
     capture = args.json or getattr(args, 'quiet', False)
     with contextlib.redirect_stdout(buf) if capture else contextlib.nullcontext():
         code = check.run(store, staged=args.staged, history=args.history, jobs=args.jobs, part=args.part,
-                         context=args.context, no_cache=args.no_cache)
+                         context=args.context, no_cache=args.no_cache,
+                         health=not (args.staged or args.history or args.part), fix=args.fix)
     text = buf.getvalue()
     if args.json:
         lines = text.splitlines()
@@ -92,6 +120,15 @@ def run(argv):
         return sync.run(store, local=args.local, quiet=getattr(args, 'quiet', False))
     if args.cmd == 'check':
         return do_check(args, store)
+    if args.cmd == 'find':
+        from . import find
+        history = not args.memory
+        memory = not args.history
+        return find.run(store, args.query, machine=args.machine, tool=args.tool, since=args.since,
+                        history=history, memory=memory, as_json=args.json, verbose=getattr(args, 'verbose', False))
+    if args.cmd == 'mcp':
+        from . import mcp
+        return mcp.serve(store)
     if args.cmd == 'summary':
         if not args.from_file and not (args.conv and args.text):
             print('usage: agentspro summary CONV TEXT | agentspro summary --from FILE.jsonl', file=sys.stderr)
