@@ -118,6 +118,10 @@ class Redact(unittest.TestCase):
 
 
 class Store(unittest.TestCase):
+    def test_frontmatter_after_blank_lines(self):
+        fields, body = common.parse_frontmatter('\n---\nname: a\ndescription: b c\n---\n\nfact\n')
+        self.assertEqual((fields.get('name'), fields.get('description'), body), ('a', 'b c', 'fact\n'))
+
     def test_write_text_replaces_whole_file(self):
         import tempfile
         with tempfile.TemporaryDirectory() as d:

@@ -240,9 +240,10 @@ and goes step by step with the user's yes.
 - `setup` for a second person: a store and hub of their own, nothing shared with the first.
 - Publishing the tool (PyPI, like gitpro), once T4 has held for a while.
 
-## 11. Open decisions
+## 11. Decisions
 
-- D1. `sync` runs without asking (§3.2). Recommended: yes.
-- D2. Hub name: keep ~/.agents.git or rename to ~/.agents-data.git (§9 5d). Recommended: rename at
-  switch-over, since both machines' remotes are touched then anyway.
-- D3. Command name: `agentspro`. A shorter alias (`ag`) is not added; it clashes with the silver searcher.
+The user approved all three on 2026-10-16 ("ok go ahead"):
+
+- D1. `sync` runs without asking (§3.2).
+- D2. The hub is renamed to ~/.agents-data.git at switch-over (§9 5d).
+- D3. The command is `agentspro`, with no short alias (`ag` is the silver searcher).

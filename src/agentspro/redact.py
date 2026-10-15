@@ -552,7 +552,10 @@ def read_frontmatter(path):
 
 
 def parse_frontmatter(text):
-    """-> (fields, body) of a file's text."""
+    """-> (fields, body) of a file's text. Blank lines before the opening --- are allowed (2026-10-16: a
+    memory written with one lost its name and description)."""
+    if text.lstrip('\n').startswith('---\n'):
+        text = text.lstrip('\n')
     if not text.startswith('---\n'):
         return {}, text
     end = text.find('\n---', 4)
