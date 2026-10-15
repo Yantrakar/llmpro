@@ -801,7 +801,8 @@ def save_blob_cache(cdir, allow, clean, values):
     os.replace(tmp, os.path.join(cdir, 'blobs.json'))
 
 
-def run(store, all=False, staged=False, history=False, jobs=None, part=None, context=False, no_cache=False):
+def run(store, all=False, staged=False, history=False, jobs=None, part=None, context=False, no_cache=False,
+        health=False, fix=False):
     """The check over the store. -> 0 if it passed, 1 if anything was found that is not allowlisted.
     Default (neither staged nor history): part 1 over every file in the working tree (`--all` before)."""
     global KEY
@@ -834,6 +835,18 @@ def run(store, all=False, staged=False, history=False, jobs=None, part=None, con
         files.update(read_blobs(store, {b: p for b, p in names.items() if b not in clean}))
         if clean:
             print(f'history: {len(names)} blobs, {len(clean)} of them clean in an earlier run and not scanned again')
+    nh = 0
+    if fix:
+        from . import health as _health
+        if _health.fix_index(store):
+            print('fixed: memory/INDEX.md rebuilt')
+    if health:
+        from . import health as _health
+        problems = _health.problems(store)
+        for line in problems:
+            print('problem: ' + line)
+        nh = len(problems)
+        print(f'store health: {nh} problems')
     if history or not staged:
         scan = files
     else:
@@ -853,6 +866,9 @@ def run(store, all=False, staged=False, history=False, jobs=None, part=None, con
         save_blob_cache(cdir, allow, {b for b, p in names.items() if blob_rel(b, p) not in BAD}, CHECKED)
     if n1 or n2:
         print('FAILED: fix the redactor or allowlist a false positive by fingerprint, with a reason')
+        return 1
+    if nh:
+        print('FAILED: store health (agentspro check --fix rebuilds INDEX.md; the rest is for you)')
         return 1
     print('passed')
     return 0

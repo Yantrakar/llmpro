@@ -548,6 +548,11 @@ def read_frontmatter(path):
         text = open(path, encoding='utf-8').read()
     except OSError:
         return {}, ''
+    return parse_frontmatter(text)
+
+
+def parse_frontmatter(text):
+    """-> (fields, body) of a file's text."""
     if not text.startswith('---\n'):
         return {}, text
     end = text.find('\n---', 4)

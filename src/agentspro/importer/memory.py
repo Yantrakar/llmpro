@@ -171,7 +171,8 @@ def write_memory(store, fields, body):
     return path
 
 
-def rebuild_index(store):
+def index_text(store):
+    """The text memory/INDEX.md should have."""
     rows = []
     for path in sorted(glob.glob(os.path.join(store, 'memory', '*.md'))):
         if os.path.basename(path) == 'INDEX.md':
@@ -190,7 +191,11 @@ def rebuild_index(store):
             out += ['', f'## {scope}', ''] if current is not None else [f'## {scope}', '']
             current = scope
         out.append(f'- [{title}]({fname}) — {desc}')
-    write_text(os.path.join(store, 'memory', 'INDEX.md'), '\n'.join(out) + '\n')
+    return '\n'.join(out) + '\n'
+
+
+def rebuild_index(store):
+    write_text(os.path.join(store, 'memory', 'INDEX.md'), index_text(store))
 
 
 def run(store, only=None, index_only=False):
