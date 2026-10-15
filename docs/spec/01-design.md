@@ -216,7 +216,7 @@ or come from store.py.
 
 ## 9. Phases
 
-Phases 1-3 touch only this repo and scratch folders. Phase 5 changes the store and both machines
+Phases 1-3 touch only this repo and scratch folders. Phase 5 changes the store and every machine
 and goes step by step with the user's yes.
 
 1. Port: package skeleton, code moved, store path made a parameter, personal strings moved to config,
@@ -225,13 +225,13 @@ and goes step by step with the user's yes.
 3. `find`, `check --near-miss`, `check --fix`.
 4. `mcp`.
 5. Switch over (the user approves each step):
-   a. machine-a: `pipx install <path to this repo>`; `agentspro setup -n`.
+   a. The hub machine: `pipx install <path to this repo>`; `agentspro setup -n`.
    b. Store commit "Move the tools to agentspro": remove tools/ except the sync.sh shim, add .agentspro/,
       add `[store]` to config.toml, update AGENTS.md (commands instead of scripts) and the memories
       that name tools/*.py. `agentspro setup` writes the hooks. `agentspro sync`.
-   c. machine-b: `pipx install git+ssh://<user>@<machine-a>/<path to this repo>` (one password), `git pull hub
+   c. Each other machine: `pipx install git+ssh://<user>@<hub machine>/<path to this repo>` (one password), `git pull hub
       master`, `agentspro setup -n`, then `setup`, then `agentspro sync`.
-   d. Optional: rename the hub to ~/.agents-data.git on machine-a, and its URL on both machines.
+   d. Optional: rename the hub to ~/.agents-data.git, and its URL on every machine.
    e. The release after: remove the sync.sh shim.
 
 ## 10. Later
