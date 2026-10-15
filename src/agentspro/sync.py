@@ -13,6 +13,7 @@ blob) before they are merged. sessions/ is git-ignored and never leaves this mac
 import datetime
 import fcntl
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -20,6 +21,7 @@ import sys
 import tempfile
 import time
 
+import agentspro
 from . import check, store as cfg
 
 HOOK_NAMES = ('pre-commit', 'pre-merge-commit', 'pre-push')
@@ -53,15 +55,24 @@ def check_store(store):
         raise SystemExit(f'{store} is not the top of a git repository; not touching git settings there')
 
 
+def hooks_dir(store):
+    """The folder git runs this store's hooks from (shared by its work trees)."""
+    return os.path.join(os.path.realpath(out(store, 'rev-parse', '--path-format=absolute', '--git-common-dir')), 'hooks')
+
+
+def hook_text(name):
+    return f'#!/bin/sh\nexec agentspro hook {name} "$@"\n'
+
+
 def repair_git_settings(store):
     """Settings git does not carry between clones: set them on every run, in this store only. The hooks are
     one-line scripts that run `agentspro hook <name>`; core.hooksPath is unset if it still points to the
     old tools/hooks."""
-    hooks = os.path.join(os.path.realpath(out(store, 'rev-parse', '--path-format=absolute', '--git-common-dir')), 'hooks')
+    hooks = hooks_dir(store)
     os.makedirs(hooks, exist_ok=True)
     for name in HOOK_NAMES:
         path = os.path.join(hooks, name)
-        want = f'#!/bin/sh\nexec agentspro hook {name} "$@"\n'
+        want = hook_text(name)
         try:
             have = open(path, encoding='utf-8').read()
         except OSError:
@@ -77,6 +88,46 @@ def repair_git_settings(store):
         git(store, 'config', '--local', '--unset', 'core.hooksPath')
     git(store, 'config', '--local', 'merge.manifest.driver', MERGE_DRIVER)
     git(store, 'config', '--local', 'merge.ours.driver', 'true')
+
+
+def store_redact_version():
+    """[store] redact_version of the loaded config.toml; a missing number is 0."""
+    value = cfg.CONFIG.get('store', {}).get('redact_version', 0)
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise SystemExit(f'{cfg.CONFIG_FILE}: [store] redact_version must be a whole number')
+    return value
+
+
+def too_new():
+    """The store was written by a newer redactor than this tool has."""
+    return store_redact_version() > agentspro.REDACT_VERSION
+
+
+TOO_NEW_MESSAGE = 'upgrade agentspro: the store was written by a newer redactor'
+
+
+def set_redact_version(path, number):
+    """Write `redact_version = number` under [store] in config.toml, keeping the rest of the file as it is."""
+    lines = open(path, encoding='utf-8').read().splitlines(keepends=True)
+    in_store, header = False, None
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s.startswith('['):
+            in_store = s.split('#')[0].strip() == '[store]'
+            header = i if in_store else header
+        elif in_store and re.match(r'redact_version\s*=', s):
+            lines[i] = f'redact_version = {number}\n'
+            break
+    else:
+        if header is not None:
+            lines.insert(header + 1, f'redact_version = {number}\n')
+        else:
+            if lines and not lines[-1].endswith('\n'):
+                lines[-1] += '\n'
+            lines += ['\n'] if lines else []
+            lines += ['[store]\n', f'redact_version = {number}\n']
+    with open(path, 'w', encoding='utf-8') as fh:
+        fh.writelines(lines)
 
 
 class Hub:
@@ -127,6 +178,9 @@ def notify(msg):
 def run(store, local=False, quiet=False):
     """-> exit status: 0 done, 1 a step failed (message on stderr). The store's config.toml must be loaded."""
     check_store(store)
+    if too_new():
+        print(f'sync: {TOO_NEW_MESSAGE} (store {store_redact_version()}, this tool {agentspro.REDACT_VERSION})', file=sys.stderr)
+        return 2
     start = time.time()
 
     def say(msg):
@@ -178,6 +232,10 @@ def _run(store, local, say, hub):
     except Exception as exc:
         print(f'{type(exc).__name__}: {exc}', file=sys.stderr)
         raise SyncFailed('import failed')
+    if store_redact_version() < agentspro.REDACT_VERSION:
+        say(f'recording redact_version = {agentspro.REDACT_VERSION} in config.toml')
+        set_redact_version(cfg.CONFIG_FILE, agentspro.REDACT_VERSION)
+        cfg.CONFIG.setdefault('store', {})['redact_version'] = agentspro.REDACT_VERSION
     git(store, 'add', '-A')
     if not ok(store, 'diff', '--cached', '--quiet'):
         n = len(out(store, 'diff', '--cached', '--name-only').splitlines())
@@ -220,3 +278,93 @@ def _run(store, local, say, hub):
     if subprocess.run(['git', '-C', store, 'push', '-q', 'hub', f'HEAD:{branch}']).returncode != 0:
         raise SyncFailed('push to the hub failed')
     say('done')
+
+
+# Sources a person may have on the machine that no importer reads yet: (tool, folder under HOME).
+UNREAD_SOURCES = (
+    ('hermes', '.hermes'),
+    ('copilot', '.vscode-server/data/User/workspaceStorage'),
+)
+
+
+def pending_sessions(store):
+    """-> {tool: [new, changed]}: sessions whose source is not in the manifest, or whose size or time differ
+    from the row written by the last import. Reads the sources' listings and stat() only."""
+    import datetime
+    from .importer import history
+    from .redact import iso, load_manifest
+    seen = {}
+    for e in load_manifest(store).values():
+        if e['machine'] == cfg.MACHINE:
+            seen[e['source_path']] = e
+    result = {}
+    for tool, mod in history.TOOLS.items():
+        new = changed = 0
+        for src in mod.source_files():
+            row = seen.get(str(src))
+            if row is None:
+                new += 1
+                continue
+            try:
+                st = os.stat(src)
+            except OSError:
+                continue  # not a file (opencode rows live in one database)
+            when = iso(datetime.datetime.fromtimestamp(st.st_mtime).astimezone())
+            if st.st_size != row['size'] or when != row['mtime']:
+                changed += 1
+        result[tool] = [new, changed]
+    return result
+
+
+def hub_position(store):
+    """-> (url or None, branch, ahead, behind), from the last fetch; nothing is fetched and nobody is logged in to."""
+    url = subprocess.run(['git', '-C', store, 'remote', 'get-url', 'hub'], capture_output=True, text=True)
+    if url.returncode != 0:
+        return None, '', 0, 0
+    branch = out(store, 'branch', '--show-current')
+    r = subprocess.run(['git', '-C', store, 'rev-list', '--left-right', '--count', f'HEAD...hub/{branch}'],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return url.stdout.strip(), branch, None, None  # never fetched
+    ahead, behind = (int(n) for n in r.stdout.split())
+    return url.stdout.strip(), branch, ahead, behind
+
+
+def dry_run(store, as_json=False):
+    """`sync -n`: what a sync would do. Changes nothing, logs in nowhere, fetches nothing. -> exit status."""
+    import json
+    from . import setup
+    check_store(store)
+    have = store_redact_version()
+    sessions = pending_sessions(store)
+    url, branch, ahead, behind = hub_position(store)
+    unread = [(t, p) for t, p in UNREAD_SOURCES if os.path.exists(os.path.join(cfg.home(), p))]
+    settings = setup.git_settings_missing(store)
+    refused = have > agentspro.REDACT_VERSION
+    if as_json:
+        print(json.dumps({
+            'redact_version': {'store': have, 'tool': agentspro.REDACT_VERSION, 'refused': refused},
+            'git_settings_missing': settings,
+            'sessions': {t: {'new': n, 'changed': c} for t, (n, c) in sessions.items()},
+            'hub': None if url is None else {'url': url, 'branch': branch, 'ahead': ahead, 'behind': behind},
+            'unread_sources': [{'tool': t, 'path': p} for t, p in unread]}))
+        return 2 if refused else 0
+    print('agentspro sync -n: nothing is changed, nobody is logged in to, nothing is fetched')
+    if refused:
+        print(f'version     {TOO_NEW_MESSAGE} (store {have}, this tool {agentspro.REDACT_VERSION}); sync would stop')
+    elif have < agentspro.REDACT_VERSION:
+        print(f'version     sync would write redact_version = {agentspro.REDACT_VERSION} into config.toml (now {have})')
+    else:
+        print(f'version     redact_version {have}, as the tool')
+    print('git         ' + ('sync would repair: ' + ', '.join(settings) if settings else 'settings in place'))
+    for tool, (n, c) in sessions.items():
+        print(f'sessions    {tool:12} {n} new, {c} changed')
+    if url is None:
+        print('hub         no hub remote; sync would commit locally only')
+    elif ahead is None:
+        print(f'hub         {url}: not fetched yet, so ahead and behind are not known')
+    else:
+        print(f'hub         {url} ({branch}): {ahead} commits ahead, {behind} behind, as of the last fetch')
+    for tool, path in unread:
+        print(f'unread      ~/{path} ({tool}): found, no importer reads it')
+    return 2 if refused else 0
