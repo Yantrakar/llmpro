@@ -1,0 +1,32 @@
+# Settings for agentspro. Change them here, not in the code.
+# Paths may start with ~. A folder that does not exist on this machine is ignored.
+
+[store]
+format = 1
+redact_version = 1
+
+[privacy]
+# Chats whose source file or working folder lies under one of these folders are imported into local/,
+# which git ignores: they stay on this machine and are never committed or sent to the hub.
+# Adding a folder affects new imports only: move that project's existing chats from history/ to
+# local/history/ (and their rows from manifest.jsonl to local/manifest.jsonl) by hand.
+local_only = []
+
+[sources]
+# Project-local tool folders (a project that sets its own CODEX_HOME or CLAUDE_CONFIG_DIR), read in
+# addition to ~/.codex and ~/.claude. Their credential files are never opened.
+codex_extra = []
+claude_extra = []
+
+[redact]
+# Words the redactor must never treat as secrets, besides the login name and short hostname, which are
+# added automatically.
+never_sweep = []
+
+[instructions]
+# Instruction files to copy in addition to the standard ones: [["tool", "path"], ...]
+extra = []
+# The same with glob patterns.
+extra_globs = []
+# Files to record as skipped: [["tool", "kind", "path", "reason"], ...]
+skip = []

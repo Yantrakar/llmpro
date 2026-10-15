@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+raw/
+/sessions/
+/local/
+/skills/synced/
+*.tmp[0-9]*
