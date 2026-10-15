@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentspro"
+dynamic = ["version"]
+description = "Keep AI assistant chats, memories and instructions in one git repo, with secrets redacted and checked."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+agentspro = "agentspro.cli:main"
+
+[tool.hatch.version]
+path = "src/agentspro/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentspro"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
