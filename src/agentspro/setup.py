@@ -35,6 +35,7 @@ SESSION_FOLDERS = (
     ('copilot', '.config/Code/User/workspaceStorage', 'copilot/workspaceStorage'),
     ('copilot', '.config/Code/User/globalStorage/emptyWindowChatSessions', 'copilot/emptyWindowChatSessions'),
     ('opencode', '.local/share/opencode', 'opencode/opencode'),
+    ('opencode', '.local/state/opencode', 'opencode/state'),  # typed prompt history, last model
 )
 
 # tool, the tool's folder under HOME, its global instruction file in that folder, how it includes a file:

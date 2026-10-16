@@ -58,5 +58,6 @@ def machine(home, monkeypatch):
     put('.codex/auth.json', '{"fake": "not a real credential"}\n')
     put('.copilot/session-state/a/events.jsonl', '{}\n')
     put('.local/share/opencode/opencode.db', 'not a database')
+    put('.local/state/opencode/prompt-history.jsonl', '{}\n')
     (home / '.config/opencode').mkdir(parents=True)
     return home

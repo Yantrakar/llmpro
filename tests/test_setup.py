@@ -83,6 +83,9 @@ def test_setup_yes_does_everything(machine, capsys, onpath):
     assert link.is_symlink() and os.readlink(link) == str(store / 'sessions/claude-code/projects')
     assert (store / 'sessions/claude-code/projects/p1/s1.jsonl').read_text() == '{"a": 1}\n'
     assert (machine / '.local/share/opencode').is_symlink()
+    link = machine / '.local/state/opencode'
+    assert link.is_symlink() and os.readlink(link) == str(store / 'sessions/opencode/state')
+    assert (store / 'sessions/opencode/state/prompt-history.jsonl').read_text() == '{}\n'
     assert not (machine / '.config/Code').exists()  # not installed: not created
     # pointers: Claude Code with an @ line, the others with a sentence, existing text kept
     assert (machine / '.claude/CLAUDE.md').read_text() == '# mine\nkeep this\n@~/.agents/AGENTS.md\n'
