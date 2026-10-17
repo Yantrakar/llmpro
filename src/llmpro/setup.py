@@ -149,6 +149,8 @@ class Item:
     def __init__(self, name, missing, state, details=(), todo=()):
         self.name, self.missing, self.state = name, missing, state
         self.details, self.todo = list(details), list(todo)
+        self.plugin = None  # the name of the plugin that owns this item
+        self.owner = None  # the plugins.base.SetupItem that applies it
 
 
 # ---------------------------------------------------------------- 1. the store
@@ -414,12 +416,53 @@ def apply_pointers(store, undo):
 
 # ---------------------------------------------------------------- setup
 
-def survey(store, hub):
-    items = [survey_store(store, hub)]
-    if items[0].todo and items[0].todo[0].startswith('cannot use'):
-        return items
-    items += [survey_settings(store), survey_sessions(store), survey_pointers(store)]
+def parse_only(only):
+    """'store,git' -> {'store', 'git'}; None -> None (everything). Raises SetupError for a name nobody owns."""
+    if only is None:
+        return None
+    from . import plugins
+    names = {n.strip() for n in only.split(',') if n.strip()}
+    known = {'store'} | {p.name for p in plugins.load()}
+    unknown = sorted(names - known)
+    if unknown or not names:
+        raise SetupError(f'--only: unknown name {", ".join(unknown) or "(empty)"}; choose from {", ".join(sorted(known))}')
+    return names
+
+
+def survey_plugins(store, only=None):
+    """-> the items of the plugins (name order). A plugin that is not ok adds one item that informs."""
+    from . import plugins
+    from .plugins.base import Status
+    ctx = plugins.context(store)
+    items = []
+    for p in plugins.load():
+        if only is not None and p.name not in only:
+            continue
+        try:
+            st = p.status(ctx)
+        except Exception as exc:
+            st = Status('error', f'{type(exc).__name__}: {exc}')
+        if st.state != 'ok':
+            it = Item(f'plugin {p.name}', False, st.reason or st.state, [st.hint] if st.hint else [])
+            it.plugin = p.name
+            items.append(it)
+            continue
+        for si in p.setup_items(ctx):
+            it = si.survey(ctx)
+            it.plugin, it.owner = p.name, si
+            items.append(it)
     return items
+
+
+def survey(store, hub, only=None):
+    """-> the four core items, then the plugins' items. `only` (a set from parse_only) limits both."""
+    items = []
+    if only is None or 'store' in only:
+        items = [survey_store(store, hub)]
+        if items[0].todo and items[0].todo[0].startswith('cannot use'):
+            return items
+        items += [survey_settings(store), survey_sessions(store), survey_pointers(store)]
+    return items + survey_plugins(store, only)
 
 
 def render(items, with_todo=False):
@@ -448,22 +491,32 @@ def finish(undo, kind):
     return path
 
 
-def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False):
+def item_json(i):
+    d = {'name': i.name, 'present': not i.missing, 'details': i.details}
+    if i.plugin:
+        d['plugin'] = i.plugin
+    return d
+
+
+def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False, only=None):
     """-> exit status: 0 done or all in place, 1 something is missing (-n) or the question was declined, 2 error."""
     try:
-        items = survey(store, hub)
+        only = parse_only(only)
+        core = only is None or 'store' in only
+        items = survey(store, hub, only)
         missing = [i for i in items if i.missing]
         if dry_run:
             if as_json:
-                jsonout.emit('setup', {'items': [{'name': i.name, 'present': not i.missing, 'details': i.details} for i in items],
-                                       'missing': [i.name for i in missing]}, ok=not missing)
+                from . import plugins
+                jsonout.emit('setup', {'items': [item_json(i) for i in items], 'missing': [i.name for i in missing],
+                                       'plugins': plugins.describe(plugins.context(store))}, ok=not missing)
             else:
                 print('\n'.join(render(items)))
             return 1 if missing else 0
         if not missing:
             print('llmpro setup: everything is in place')
             return 0
-        if items[0].todo and items[0].todo[0].startswith('cannot use'):
+        if core and items[0].todo and items[0].todo[0].startswith('cannot use'):
             raise SetupError(items[0].details[0])
         if hub and store_state(store) == 'present':
             print(f'llmpro setup: the store {tilde(store)} already exists; --hub is ignored', file=sys.stderr)
@@ -480,14 +533,20 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False)
             return 1
         undo = Undo()
         try:
-            if items[0].missing:
-                apply_store(store, hub, undo)
-            if survey_settings(store).missing:
-                apply_settings(store, undo)
-            if survey_sessions(store).missing:
-                apply_sessions(store, undo)
-            if survey_pointers(store).missing:
-                apply_pointers(store, undo)
+            if core:
+                if items[0].missing:
+                    apply_store(store, hub, undo)
+                if survey_settings(store).missing:
+                    apply_settings(store, undo)
+                if survey_sessions(store).missing:
+                    apply_sessions(store, undo)
+                if survey_pointers(store).missing:
+                    apply_pointers(store, undo)
+            from . import plugins
+            ctx = plugins.context(store)
+            for it in missing:
+                if it.owner is not None:
+                    it.owner.apply(ctx, undo)
         finally:
             finish(undo, 'setup')
         print('llmpro setup: done', file=sys.stderr)
@@ -542,6 +601,15 @@ def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
                 + [f'remove the hook {tilde(h)}' for h in hooks]
                 + [f'unset git config {k} in the store' for k, _ in configs]
                 + [f'remove the llmpro line from {tilde(p)}' for p in pointers])
+        from . import plugins
+        ctx = plugins.context(store)
+        owned = []  # (plugin name, SetupItem), plugins in reverse name order
+        for p in reversed(plugins.load()):
+            if p.status(ctx).state != 'ok':
+                continue
+            for si in p.setup_items(ctx):
+                owned.append((p.name, si))
+                todo += [f'[{p.name}] {line}' for line in si.plan_remove(ctx)]
         if dry_run:
             if as_json:
                 jsonout.emit('uninstall', {'todo': todo}, ok=not todo)
@@ -563,6 +631,9 @@ def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
             return 1
         undo = Undo()
         try:
+            for name, si in owned:
+                for line in si.remove(ctx, undo):
+                    print(f'[{name}] {line}', file=sys.stderr)
             for src, dst in sessions:
                 os.remove(src)
                 shutil.move(dst, src)
