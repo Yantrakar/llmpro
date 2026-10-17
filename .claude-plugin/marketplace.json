@@ -1,6 +1,7 @@
 {
   "name": "llmpro",
   "owner": {"name": "Yantrakar"},
+  "description": "Yantrakar's plugins for Claude Code: llmpro, one store for your assistants' context.",
   "plugins": [
     {
       "name": "llmpro",
