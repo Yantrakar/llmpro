@@ -271,10 +271,19 @@ def test_opencode_plain_json_keeps_other_keys_and_order(machine, store, capsys):
     assert SECRET not in out + err
 
 
+def skill_left_alone(store):
+    """A hand-edited copy of the llmpro skill, which setup leaves alone, so these tests see only opencode."""
+    folder = os.path.join(store, 'skills', 'llmpro')
+    os.makedirs(folder)
+    with open(os.path.join(folder, 'SKILL.md'), 'w') as fh:
+        fh.write('---\nname: llmpro\n---\nmy own notes\n')
+
+
 def test_opencode_already_set_is_not_rewritten(machine, store, capsys):
     text = json.dumps({'instructions': [want_instructions(machine)], 'mcp': {'llmpro': WANT_MCP}}, indent=4)
     oc_file(machine).write_text(text)
     os.utime(oc_file(machine), (1000, 1000))
+    skill_left_alone(store)
     code, got, _ = items(machine, capsys, '--only', 'memory')
     assert got['opencode config']['present']
     code, out, err = run(['--store', store, 'setup', '-y', '--only', 'memory'], capsys)
@@ -292,6 +301,7 @@ def test_opencode_json_with_one_value_missing_gets_only_that(machine, store, cap
 def test_opencode_jsonc_is_left_alone_and_the_lines_are_printed(machine, store, capsys):
     text = '// my settings\n{\n  "theme": "dark", // trailing\n  "key": "' + SECRET + '",\n}\n'
     oc_file(machine, 'opencode.jsonc').write_text(text)
+    skill_left_alone(store)
     code, got, _ = items(machine, capsys, '--only', 'memory')
     assert not got['opencode config']['present']
     code, out, err = run(['--store', store, 'setup', '-n', '--only', 'memory'], capsys)
