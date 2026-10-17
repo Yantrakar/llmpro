@@ -16,8 +16,9 @@ skills/<name>/    every skill, the only copy; tools read or link to this folder.
 notes/<tool>/     a tool's dated working notes, kept unchanged (not memories)
 sessions/<tool>/  the tools' own raw session files, unredacted; git-ignored, never leaves the machine
 config.toml       settings to tune instead of code: local-only projects, extra tool folders
-local/            chats of local-only projects ([privacy] local_only in config.toml): local/history/... and
-                  local/manifest.jsonl, redacted like history/; git-ignored, never committed or sent to the hub
+local/            chats of local-only projects ([privacy] local_only in config.toml, or a repo gitpro places
+                  under one of [privacy] local_identities): local/history/... and local/manifest.jsonl,
+                  redacted like history/; git-ignored, never committed or sent to the hub
 manifest.jsonl    one row per source item: tool, machine, kind, source_path, original_id,
                   mtime, size, output, status (imported | skipped:<reason>)
 .agentspro/       allowlist.json (secret-check false positives) and memory_overrides.json
