@@ -11,7 +11,13 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+git = ["gitpro>=0.4,<0.6"]
 test = ["pytest"]
+
+[project.entry-points."llmpro.plugins"]
+memory = "llmpro.plugins.memory:plugin"
+secrets = "llmpro.plugins.secrets:plugin"
+git = "llmpro.plugins.git:plugin"
 
 [project.scripts]
 llmpro = "llmpro.cli:main"
