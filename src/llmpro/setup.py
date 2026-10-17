@@ -498,6 +498,15 @@ def item_json(i):
     return d
 
 
+def yours(items):
+    """At the end of setup: what an item that is in place still leaves for the person to do by hand, such as a
+    line for a file llmpro never writes (gitpro.toml)."""
+    lines = [f'  [{i.name}] {line}' for i in items if not i.missing for line in i.todo]
+    if lines:
+        print('For you to do by hand:', file=sys.stderr)
+        print('\n'.join(lines), file=sys.stderr)
+
+
 def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False, only=None):
     """-> exit status: 0 done or all in place, 1 something is missing (-n) or the question was declined, 2 error."""
     try:
@@ -515,6 +524,7 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False,
             return 1 if missing else 0
         if not missing:
             print('llmpro setup: everything is in place')
+            yours(items)
             return 0
         if core and items[0].todo and items[0].todo[0].startswith('cannot use'):
             raise SetupError(items[0].details[0])
@@ -550,6 +560,7 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False,
         finally:
             finish(undo, 'setup')
         print('llmpro setup: done', file=sys.stderr)
+        yours(items)
         return 0
     except SetupError as exc:
         print(f'llmpro setup: {exc}', file=sys.stderr)

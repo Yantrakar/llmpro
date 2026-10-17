@@ -338,3 +338,14 @@ def test_uninstall_removes_script_and_undo_puts_it_back(guard, store, machine, c
     assert 'can go too' in cap.err
     sh('sh', cap.out.split('To undo: sh ')[1].split()[0])
     assert guard.script.read_text() == pushguard.SCRIPT
+
+
+def test_setup_in_place_still_prints_the_lines_to_add(guard, store, machine, capsys):
+    guard()
+    assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 0
+    capsys.readouterr()
+    assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 0
+    cap = capsys.readouterr()
+    assert 'everything is in place' in cap.out
+    assert 'For you to do by hand:' in cap.err and 'chain_to = "~/.local/share/llmpro/hooks"' in cap.err
+    assert not (machine / '.config' / 'gitpro.toml').exists()
