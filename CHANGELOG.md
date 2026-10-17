@@ -41,6 +41,11 @@ All notable changes to llmpro (developed as agentspro). The format follows
 - `[privacy] local_identities` in `config.toml`: chats of repos that gitpro places under
   one of those identities stay in `local/`. When gitpro cannot place a folder, its
   chats stay local. A chat that was shared before is listed, not moved.
+- The `llmpro` skill, for every assistant: setup writes it to the store's `skills/` and
+  keeps it up to date, and leaves a copy alone once its first marker line is taken out.
+- A Claude Code plugin in this repo, with the skill, the MCP server and a hook before each
+  Bash call that asks gitpro (when it can) whether the git identity is right. Install it
+  with `/plugin marketplace add Yantrakar/llmpro`, then `/plugin install llmpro@llmpro`.
 
 ### Changed
 

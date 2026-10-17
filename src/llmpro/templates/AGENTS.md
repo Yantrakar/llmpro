@@ -13,8 +13,7 @@ This folder is the assistant context store, kept as plain files so any assistant
 - Past conversations: history/<machine>/<tool>/<year>/<date>_<title>_<id>.md, one per file, each starting with a short summary. Grep before asking the user again, for example `grep -ril "ansible" history/`.
 - instructions/<machine>/<tool>/ holds copies of instruction files at their original paths, with the home folder as HOME/. The live original is at the source_path that manifest.jsonl gives.
 - skills/<name>/SKILL.md: every skill, and the only copy of each. Edit them here. A skill copied anywhere else is garbage: remove it rather than keep it in step. Tools that read skills from a folder of their own should link it to the store's skills/.
-
-- When gitpro is installed, the `git_*` tools of the llmpro MCP server and `llmpro git ...` tell which git name, email and key a repo uses. Ask before you commit or push.
+- When gitpro is installed, the `git_*` tools of the llmpro MCP server and `llmpro git ...` tell which git name, email and key a repo uses. Check with them before you commit or push.
 
 ## Adding or changing a memory
 

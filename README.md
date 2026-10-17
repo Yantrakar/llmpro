@@ -59,6 +59,8 @@ The plugin brings the skill, the MCP server and a hook in one step.
 
 The hook runs before each Bash call. If gitpro is installed and can check commands, llmpro hands the call to `gitpro agent-check`. Otherwise it does nothing and never blocks. If gitpro's own plugin is enabled too, the check runs twice. Keep one of them.
 
+`llmpro setup` also registers the MCP server with Claude Code. With the plugin installed, Claude Code then starts it twice. Keep the plugin's and run `claude mcp remove --scope user llmpro`.
+
 ## Push guard
 
 The push guard checks what a push adds, in any repo, for secrets. If it finds one, the push stops.
