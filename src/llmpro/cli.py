@@ -8,6 +8,8 @@ CAPABILITIES = ('check', 'check.json', 'find', 'find.json', 'mcp', 'setup', 'set
 
 RENAME_NOTE = 'agentspro is now llmpro; this name keeps working for now'
 
+PLUGIN_COMMANDS = {}  # command name -> handler(args, store), filled by build_parser from the plugins
+
 
 def build_parser():
     import argparse
@@ -32,6 +34,7 @@ def build_parser():
     t.add_argument('-n', '--dry-run', action='store_true', help='show the state of each item; exit 1 if one is missing')
     t.add_argument('-y', '--yes', action='store_true', help='do not ask')
     t.add_argument('--hub', metavar='URL', help='clone the store from this hub when there is none')
+    t.add_argument('--only', metavar='NAMES', help='comma-separated: store (the core items) and plugin names')
     t.add_argument('--json', action='store_true', help='with -n: result as JSON')
 
     u = sub.add_parser('uninstall', parents=[common], help='take llmpro off this machine (the store is kept)')
@@ -69,6 +72,11 @@ def build_parser():
     m.add_argument('conv', nargs='?', help='conversation id or file')
     m.add_argument('text', nargs='?', help='the summary')
     m.add_argument('--from', dest='from_file', metavar='FILE.jsonl', help='lines of {"id": ..., "summary": ...}')
+
+    from . import plugins
+    for plugin in plugins.load():
+        for name, handler in plugin.add_commands(sub, common).items():
+            PLUGIN_COMMANDS[name] = handler
     return p
 
 
@@ -103,28 +111,60 @@ def do_check(args, store):
 
 
 def version_json():
-    from . import jsonout, __version__
+    from . import jsonout, plugins, __version__
+    ctx = plugins.context()
+    caps = set(CAPABILITIES)
+    for plugin in plugins.load():
+        caps.update(plugin.capabilities(ctx))
     jsonout.emit('version', {'version': __version__, 'python': sys.version.split()[0],
-                             'capabilities': sorted(CAPABILITIES)})
+                             'capabilities': sorted(caps), 'plugins': plugins.describe(ctx)})
     return 0
+
+
+PASSTHROUGH_REST = []
+
+
+def passthrough_split(argv):
+    """argparse's REMAINDER fails when the first word after the command is an option (`llmpro git --help`).
+    For a passthrough plugin command, cut argv after the command name; the rest goes to PASSTHROUGH_REST.
+    (build_parser has filled PLUGIN_COMMANDS by now.)"""
+    i = 0
+    while i < len(argv):
+        word = argv[i]
+        if word == '--store':
+            i += 2
+        elif word in ('-q', '--quiet', '-v', '--verbose') or word.startswith('--store='):
+            i += 1
+        else:
+            break
+    if i < len(argv) and getattr(PLUGIN_COMMANDS.get(argv[i]), 'passthrough', False):
+        PASSTHROUGH_REST[:] = argv[i + 1:]
+        return argv[:i + 1]
+    return argv
 
 
 def run(argv):
     if sorted(argv) == ['--json', '--version']:  # argparse's --version exits before --json is read
         return version_json()
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(passthrough_split(argv))
+    if getattr(PLUGIN_COMMANDS.get(args.cmd), 'passthrough', False):
+        args.args = list(PASSTHROUGH_REST)
     if not args.cmd:
-        build_parser().print_usage(sys.stderr)
+        parser.print_usage(sys.stderr)
         return 2
     from . import store as cfg
     store = cfg.locate(getattr(args, 'store', None))
+    if args.cmd in PLUGIN_COMMANDS:
+        return PLUGIN_COMMANDS[args.cmd](args, store)
     if getattr(args, 'quiet', False):
         cfg.QUIET[0] = True
     if args.cmd in ('setup', 'uninstall'):
         from . import setup
         quiet = getattr(args, 'quiet', False)
         if args.cmd == 'setup':
-            return setup.setup(store, dry_run=args.dry_run, yes=args.yes, hub=args.hub, as_json=args.json, quiet=quiet)
+            return setup.setup(store, dry_run=args.dry_run, yes=args.yes, hub=args.hub, as_json=args.json, quiet=quiet,
+                               only=args.only)
         return setup.uninstall(store, dry_run=args.dry_run, yes=args.yes, as_json=args.json, quiet=quiet)
     if args.cmd == 'sync':
         cfg.configure(store)
