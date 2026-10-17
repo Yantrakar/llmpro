@@ -56,6 +56,9 @@ def main(argv):
     try:
         if argv[0] == 'hook' and len(argv) >= 2 and argv[1] in HOOKS:
             return hook(argv[1])
+        if argv[0] == 'hook' and len(argv) >= 2 and argv[1] == 'push-guard':
+            from . import pushguard
+            return pushguard.run(argv[2:], sys.stdin)
         if argv[0] == 'merge-driver' and len(argv) >= 5 and argv[1] == 'manifest':
             return merge_manifest(argv[3], argv[4])
     except KeyboardInterrupt:
@@ -63,6 +66,6 @@ def main(argv):
     except (subprocess.CalledProcessError, OSError, ValueError) as exc:
         print(f'llmpro: {exc}', file=sys.stderr)
         return 2
-    print('usage: llmpro hook pre-commit|pre-merge-commit|pre-push\n'
+    print('usage: llmpro hook pre-commit|pre-merge-commit|pre-push|push-guard\n'
           '       llmpro merge-driver manifest BASE OURS THEIRS', file=sys.stderr)
     return 2

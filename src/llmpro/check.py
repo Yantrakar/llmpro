@@ -18,6 +18,7 @@ The fingerprint is of the value (part 1), of the source secret, or of the 8-char
 Exit status 1 if anything is found that is not allowlisted.
 """
 import argparse
+import dataclasses
 import hashlib
 import json
 import math
@@ -33,6 +34,19 @@ from .store import MACHINE, data_file
 # The workers read KEY, SECRETS, PIECES... as the parent set them before the pool forked.
 Pool = multiprocessing.get_context('fork').Pool
 ALLOWLIST_FILES = ('.agentspro/allowlist.json', 'tools/secretcheck_allowlist.json')
+
+
+
+def pmap(jobs, fn, items, unordered=False):
+    """fn over items, in a worker pool; with jobs=1 (or one item) in this process, with no pool at all (a pool
+    cannot start inside a daemonic process, which is where a hook may run). A generator: results come as ready."""
+    items = list(items)
+    if jobs <= 1 or len(items) <= 1:
+        yield from map(fn, items)
+        return
+    with Pool(jobs) as pool:
+        yield from (pool.imap_unordered if unordered else pool.imap)(fn, items, 1)
+
 
 # ---- part 1 patterns -------------------------------------------------------------------------------
 # (kind, regex, length of the public prefix that is not counted for 8-character pieces)
@@ -666,13 +680,16 @@ def match_hashed(item):
     return hits
 
 
-def part2_cached(store, files, allow, jobs, show_context, more=None):
+def part2_cached(store, files, allow, jobs, show_context, more=None, quiet=False, sink=None):
     """more: (hashes of the values some files were checked against before, a function that returns those
-    files): they are checked again only if a value not among those hashes was collected since."""
+    files): they are checked again only if a value not among those hashes was collected since.
+    quiet: print nothing. sink: a list that receives (file, line, how, kind, masked) for each hit instead of
+    the hits being printed (scan_texts)."""
     global KEY
+    say = (lambda *a, **k: None) if quiet else print
     sources, refused = raw_sources(store)
     for p in refused:
-        print(f'note: not opened (credential file): {p}')
+        say(f'note: not opened (credential file): {p}')
     cdir = cache_dir(store)
     KEY, cache = load_cache(cdir)
     old, afp = cache['sources'], cache['afp']
@@ -692,21 +709,20 @@ def part2_cached(store, files, allow, jobs, show_context, more=None):
             todo.append((p, 0))
     fresh = {}
     if todo:
-        with Pool(jobs) as pool:
-            for path, start, out, end, tail in pool.imap_unordered(collect_job, todo, chunksize=1):
-                errors = [x for x in out if x[0] == 'error']
-                for _, exc, src in errors:
-                    print(f'note: could not read {src}: {exc}')
-                values = list(old[path]['values']) if start else []
-                seen = {e[1] for e in values}
-                for kind, v, _ in out:
-                    if kind != 'error':
-                        e = hashed_entry(kind, v, allow, afp)
-                        if e[1] not in seen:
-                            seen.add(e[1])
-                            values.append(e)
-                fresh[path] = {'sig': sigs[path], 'offset': end, 'tail': tail, 'values': values,
-                               'keep': not errors and sigs[path] is not None}
+        for path, start, out, end, tail in pmap(jobs, collect_job, todo, unordered=True):
+            errors = [x for x in out if x[0] == 'error']
+            for _, exc, src in errors:
+                say(f'note: could not read {src}: {exc}')
+            values = list(old[path]['values']) if start else []
+            seen = {e[1] for e in values}
+            for kind, v, _ in out:
+                if kind != 'error':
+                    e = hashed_entry(kind, v, allow, afp)
+                    if e[1] not in seen:
+                        seen.add(e[1])
+                        values.append(e)
+            fresh[path] = {'sig': sigs[path], 'offset': end, 'tail': tail, 'values': values,
+                           'keep': not errors and sigs[path] is not None}
     merged = {p: fresh.get(p) or old[p] for p in sources}
     WHOLE.clear()
     HPIECES.clear()
@@ -722,28 +738,26 @@ def part2_cached(store, files, allow, jobs, show_context, more=None):
                 if afp.get(ps[i:i + 16]) not in allow:
                     HPIECES.setdefault(bytes.fromhex(ps[i:i + 16]), WHOLE[hb])
     MIN_LEN[0] = min((m[1] for m in META), default=6)
-    print(f'leak check: {len(sources)} raw sources ({len(todo)} read, the rest from the cache), '
+    say(f'leak check: {len(sources)} raw sources ({len(todo)} read, the rest from the cache), '
           f'{len(META)} distinct secret values, {len(HPIECES)} 8-character pieces')
     CHECKED[:] = [m[3] for m in META]
     if more:
         new = set(CHECKED) - set(more[0])
         if new:
             extra = more[1]()
-            print(f'leak check: {len(new)} new secret values since the last clean run: checking {len(extra)} cached blobs again')
+            say(f'leak check: {len(new)} new secret values since the last clean run: checking {len(extra)} cached blobs again')
             files = {**files, **extra}
-    with Pool(jobs) as pool:
-        results = pool.map(match_hashed, sorted(files.items(), key=lambda kv: -len(kv[1])), chunksize=1)
+    results = list(pmap(jobs, match_hashed, sorted(files.items(), key=lambda kv: -len(kv[1]))))
     hits = sorted(h for r in results for h in r)
     # resolve each hit by collecting its source again, in memory: print it as without the cache
     plain = {}
     need = sorted({META[h[3]][2] for h in hits})
     if need:
-        print(f'note: reading {len(need)} raw source(s) again to show the hits')
-        with Pool(jobs) as pool:
-            for out in pool.map(collect_source, need, chunksize=1):
-                for kind, v, _ in out:
-                    if kind != 'error':
-                        plain.setdefault(kh(v).hex(), v)
+        say(f'note: reading {len(need)} raw source(s) again to show the hits')
+        for out in pmap(jobs, collect_source, need):
+            for kind, v, _ in out:
+                if kind != 'error':
+                    plain.setdefault(kh(v).hex(), v)
     rows = []
     for rel, line, how, i, ph, ctx in hits:
         kind, n, src, hv = META[i]
@@ -752,6 +766,8 @@ def part2_cached(store, files, allow, jobs, show_context, more=None):
             BAD.add(rel)
             rows.append((rel, line, f'{how} [{kind}] (len {n}) from {src}: the source has changed since; '
                                     f'run with --no-cache to see it', ctx))
+            if sink is not None:
+                sink.append((rel, line, how, kind, f'(len {n})'))
             continue
         if fp(v) in allow:
             afp[hv] = fp(v)
@@ -767,7 +783,9 @@ def part2_cached(store, files, allow, jobs, show_context, more=None):
         what = f'piece sha256:{fp(piece)} of ' if how == 'piece' else ''
         BAD.add(rel)
         rows.append((rel, line, f'{how} {what}[{kind}] {mask(v)} from {src}', ctx))
-    found = print_leaks(rows, show_context)
+        if sink is not None:
+            sink.append((rel, line, how, kind, mask(v)))
+    found = len(rows) if quiet else print_leaks(rows, show_context)
     cache['sources'] = {p: {k: e[k] for k in ('sig', 'offset', 'tail', 'values')}
                         for p, e in merged.items() if e.get('keep', True)}
     save_cache(cdir, cache)
@@ -801,16 +819,49 @@ def save_blob_cache(cdir, allow, clean, values):
     os.replace(tmp, os.path.join(cdir, 'blobs.json'))
 
 
+def load_allow(store):
+    """-> {fingerprint: reason} from the store's allowlist (empty when there is none)."""
+    allowlist = data_file(store, 'allowlist.json', 'secretcheck_allowlist.json')
+    if os.path.exists(allowlist):
+        return json.load(open(allowlist, encoding='utf-8'))
+    return {}
+
+
+@dataclasses.dataclass
+class Hit:
+    label: str   # the key of the text it was found in
+    offset: int  # character offset in that text (for a leak hit, the start of its line)
+    kind: str
+    masked: str  # mask(value): never the value
+    how: str     # 'pattern', 'whole' or 'piece'
+
+
+def scan_texts(store, texts, jobs=1):
+    """Both checks over texts ({label: text}) that are not store files, with the store's raw sources, cache and
+    allowlist. -> [Hit], sorted. Prints nothing and does not write the blob cache. jobs=1 starts no pool."""
+    allow = load_allow(store)
+    hits = []
+    for label, text in sorted(texts.items()):
+        for kind, v, off in scan_patterns(text):
+            if fp(v) not in allow:
+                hits.append(Hit(label, off, kind, mask(v), 'pattern'))
+    sink = []
+    part2_cached(store, texts, allow, jobs, False, quiet=True, sink=sink)
+    for label, line, how, kind, masked in sorted(sink):
+        starts = [0]
+        for m in re.finditer('\n', texts[label]):
+            starts.append(m.end())
+        hits.append(Hit(label, starts[min(line, len(starts)) - 1], kind, masked, how))
+    return hits
+
+
 def run(store, all=False, staged=False, history=False, jobs=None, part=None, context=False, no_cache=False,
         health=False, fix=False):
     """The check over the store. -> 0 if it passed, 1 if anything was found that is not allowlisted.
     Default (neither staged nor history): part 1 over every file in the working tree (`--all` before)."""
     global KEY
     jobs = jobs or os.cpu_count() or 4
-    allow = {}
-    allowlist = data_file(store, 'allowlist.json', 'secretcheck_allowlist.json')
-    if os.path.exists(allowlist):
-        allow = json.load(open(allowlist, encoding='utf-8'))
+    allow = load_allow(store)
     # sessions/ (raw/ before 2026-10-08) holds the tools' unredacted logs; git must never see them
     raw = [p for p in git(store, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', 'sessions', 'raw')
            .decode().split('\0') if p]
