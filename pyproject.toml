@@ -33,7 +33,7 @@ packages = ["src/llmpro"]
 "skills/llmpro" = "llmpro/skills/llmpro"
 
 [tool.hatch.build.targets.sdist]
-exclude = ["names", ".github"]
+exclude = ["names", ".github", ".claude"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
