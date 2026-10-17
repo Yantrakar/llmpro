@@ -11,6 +11,11 @@ redact_version = 1
 # Adding a folder affects new imports only: move that project's existing chats from history/ to
 # local/history/ (and their rows from manifest.jsonl to local/manifest.jsonl) by hand.
 local_only = []
+# Or keep chats local by git identity, without listing folders: every chat whose project folder is a repo
+# that gitpro places under one of these identities (ids from gitpro.toml; "default" is the default
+# identity) stays in local/. Needs gitpro 0.4 or later. If gitpro cannot place a folder, its chats stay
+# local. Chats that are already shared stay where they are; sync lists them so you can move them by hand.
+# local_identities = ["work"]
 
 [sources]
 # Project-local tool folders (a project that sets its own CODEX_HOME or CLAUDE_CONFIG_DIR), read in

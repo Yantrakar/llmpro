@@ -9,7 +9,7 @@ import time
 import unicodedata
 
 from . import store
-from .store import MACHINE, config_paths, is_local_only  # noqa: F401
+from .store import MACHINE, NOW_LOCAL, config_paths, is_local_only, is_local_project  # noqa: F401
 
 _START = time.monotonic()
 
@@ -699,8 +699,37 @@ def output_path(store, conv):
     year = dt.strftime('%Y') if dt else 'undated'
     day = dt.strftime('%Y-%m-%d') if dt else 'undated'
     name = f'{day}_{slugify(conv.title)}_{id8(conv.original_id)}.md'
-    base = os.path.join(store, 'local') if is_local_only(conv.source_file, conv.project) else store
+    if is_local_only(conv.source_file, conv.project):
+        base = os.path.join(store, 'local')
+    elif is_local_project(conv.project):  # local by identity: only new chats move; a shared one stays where it is
+        row = load_manifest_cached(store).get((conv.tool, MACHINE, 'conversation', conv.original_id))
+        kept = (row or {}).get('output', '')
+        if kept and not kept.startswith('local/'):
+            if kept not in NOW_LOCAL:
+                NOW_LOCAL.append(kept)
+            return os.path.join(store, kept)
+        base = os.path.join(store, 'local')
+    else:
+        base = store
     return os.path.join(base, 'history', MACHINE, conv.tool, year, name)
+
+
+_manifest_seen = {}
+
+
+def load_manifest_cached(store):
+    """The manifest as it was when the run started: rows written later in the same run do not count."""
+    stamp = []
+    for path in (os.path.join(store, 'manifest.jsonl'), os.path.join(store, 'local', 'manifest.jsonl')):
+        try:
+            st = os.stat(path)
+            stamp.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            stamp.append(None)
+    got = _manifest_seen.get(store)
+    if got is None or got[0] != stamp:
+        got = _manifest_seen[store] = (stamp, load_manifest(store))
+    return got[1]
 
 
 def file_mtime(path):
