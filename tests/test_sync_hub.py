@@ -1,13 +1,13 @@
 """sync against a local bare repo as the hub, the version guard, and the manifest merge driver.
-Hooks and the merge driver run `agentspro`, so it must be on PATH (the onpath fixture)."""
+Hooks and the merge driver run `llmpro`, so it must be on PATH (the onpath fixture)."""
 import json
 import os
 import subprocess
 
 import pytest
 
-import agentspro
-from agentspro import cli, setup, store as cfg, sync
+import llmpro
+from llmpro import cli, setup, store as cfg, sync
 
 
 def git(d, *args, check=True):
@@ -113,7 +113,7 @@ def test_sync_dry_run_json(two, capsys):
     a, _ = two
     assert cli.main(['sync', '-n', '--json', '--store', str(a)]) == 0
     got = json.loads(capsys.readouterr().out)
-    assert got['hub']['branch'] == 'main' and got['redact_version']['tool'] == agentspro.REDACT_VERSION
+    assert got['hub']['branch'] == 'main' and got['redact_version']['tool'] == llmpro.REDACT_VERSION
     assert got['git_settings_missing'] == []
 
 
@@ -143,11 +143,11 @@ def test_sync_dry_run_reports_new_and_changed_sessions(home, store, onpath, caps
 # ---------------------------------------------------------------- version guard
 
 def test_store_newer_than_tool_stops_sync(store, onpath, capsys):
-    open(os.path.join(store, 'config.toml'), 'w').write(f'[store]\nredact_version = {agentspro.REDACT_VERSION + 1}\n')
+    open(os.path.join(store, 'config.toml'), 'w').write(f'[store]\nredact_version = {llmpro.REDACT_VERSION + 1}\n')
     (open(os.path.join(store, 'x.md'), 'w')).write('x\n')
     code = cli.main(['sync', '--local', '--store', store])
     assert code == 2
-    assert 'upgrade agentspro: the store was written by a newer redactor' in capsys.readouterr().err
+    assert 'upgrade llmpro: the store was written by a newer redactor' in capsys.readouterr().err
     assert git(store, 'log', '--oneline', check=False).stdout == ''  # nothing committed
     assert cli.main(['sync', '-n', '--store', store]) == 2
 
@@ -157,14 +157,14 @@ def test_missing_version_is_written_in_the_sync_commit(store, onpath, capsys):
     open(cfgfile, 'w').write('# mine\n[privacy]\nlocal_only = []\n')
     assert cli.main(['sync', '--local', '-q', '--store', store]) == 0
     text = open(cfgfile).read()
-    assert text.startswith('# mine\n') and f'[store]\nredact_version = {agentspro.REDACT_VERSION}\n' in text
+    assert text.startswith('# mine\n') and f'[store]\nredact_version = {llmpro.REDACT_VERSION}\n' in text
     assert 'config.toml' in git(store, 'show', '--name-only', '--format=', 'HEAD').stdout
 
 
 def test_older_version_is_raised_and_other_keys_kept(store, onpath, capsys, monkeypatch):
     cfgfile = os.path.join(store, 'config.toml')
     open(cfgfile, 'w').write('[store]\nformat = 1\nredact_version = 1  # was\n\n[privacy]\nlocal_only = []\n')
-    monkeypatch.setattr(agentspro, 'REDACT_VERSION', 3)
+    monkeypatch.setattr(llmpro, 'REDACT_VERSION', 3)
     assert cli.main(['sync', '--local', '-q', '--store', store]) == 0
     assert open(cfgfile).read() == '[store]\nformat = 1\nredact_version = 3\n\n[privacy]\nlocal_only = []\n'
     assert 'config.toml' in git(store, 'show', '--name-only', '--format=', 'HEAD').stdout
@@ -204,7 +204,7 @@ def read_rows(path):
 
 
 def test_merge_manifest_function(tmp_path, monkeypatch):
-    from agentspro import hot
+    from llmpro import hot
     monkeypatch.setattr(hot, 'MACHINE', 'm1')
     ours, theirs = tmp_path / 'ours', tmp_path / 'theirs'
     write_rows(ours, [row('m1', 'a', 'new'), row('m2', 'b', 'stale')])

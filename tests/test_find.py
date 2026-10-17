@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from agentspro import cli
+from llmpro import cli
 
 
 def put(store, rel, text):
@@ -98,8 +98,9 @@ def test_find_verbose_lines(filled, capsys):
 def test_find_json(filled, capsys):
     code, cap = find(filled, capsys, 'pelicans', '--json')
     got = json.loads(cap.out)
-    assert code == 0 and got[0]['kind'] == 'memory' and got[0]['path'] == 'memory/pelican.md'
-    assert find(filled, capsys, 'zebra', '--json')[1].out.strip() == '[]'
+    assert code == 0 and got['ok'] is True and got['command'] == 'find'
+    assert got['results'][0]['kind'] == 'memory' and got['results'][0]['path'] == 'memory/pelican.md'
+    assert json.loads(find(filled, capsys, 'zebra', '--json')[1].out)['results'] == []
 
 
 # ---------------------------------------------------------------- health, --fix
@@ -168,7 +169,7 @@ def test_near_miss_json_and_exclusive(store, capsys):
 
 class Server:
     def __init__(self, store):
-        self.p = subprocess.Popen([sys.executable, '-m', 'agentspro', '--store', store, 'mcp'],
+        self.p = subprocess.Popen([sys.executable, '-m', 'llmpro', '--store', store, 'mcp'],
                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.n = 0
 
@@ -205,10 +206,10 @@ def test_mcp_handshake(server):
 def test_mcp_find(server):
     r = server.ask('tools/call', {'name': 'find', 'arguments': {'query': ['ansible', 'docker']}})['result']
     assert r['isError'] is False
-    hits = json.loads(r['content'][0]['text'])
+    hits = json.loads(r['content'][0]['text'])['results']
     assert len(hits) == 1 and hits[0]['title'] == 'Beta chat'
     r = server.ask('tools/call', {'name': 'find', 'arguments': {'query': ['zebra']}})['result']
-    assert json.loads(r['content'][0]['text']) == []
+    assert json.loads(r['content'][0]['text'])['results'] == []
     r = server.ask('tools/call', {'name': 'find', 'arguments': {'query': []}})['result']
     assert r['isError'] is True
 

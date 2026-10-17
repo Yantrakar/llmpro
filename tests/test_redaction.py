@@ -16,9 +16,9 @@ import re
 import sys
 import unittest
 
-from agentspro import check as secretcheck
-from agentspro import redact as common
-from agentspro import store
+from llmpro import check as secretcheck
+from llmpro import redact as common
+from llmpro import store
 
 DASH = '-' * 5
 BEGIN = f'{DASH}BEGIN PRIVATE KEY{DASH}'
@@ -133,7 +133,7 @@ class Store(unittest.TestCase):
             self.assertEqual(os.listdir(os.path.dirname(p)), ['b.md'])
 
     def test_local_only_claude_slug(self):
-        from agentspro.importer import memory as import_memory
+        from llmpro.importer import memory as import_memory
         saved = store.LOCAL_ONLY[:]
         try:
             store.LOCAL_ONLY[:] = ['/home/u/code/private']

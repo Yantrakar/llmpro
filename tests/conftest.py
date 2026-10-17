@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from agentspro import store as cfg
+from llmpro import store as cfg
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def store(home):
 
 @pytest.fixture
 def onpath(monkeypatch):
-    """Hooks and the merge driver run `agentspro`: put the one that belongs to this Python on PATH."""
+    """Hooks and the merge driver run `llmpro`: put the one that belongs to this Python on PATH."""
     import sys
     monkeypatch.setenv('PATH', os.path.dirname(sys.executable) + os.pathsep + os.environ['PATH'])
 
@@ -40,7 +40,7 @@ def onpath(monkeypatch):
 @pytest.fixture
 def machine(home, monkeypatch):
     """A temporary HOME with fake tool folders, and no tool running."""
-    from agentspro import setup
+    from llmpro import setup
     monkeypatch.setattr(setup, 'running_tools', lambda: [])
     monkeypatch.setenv('XDG_STATE_HOME', str(home / 'state'))
 

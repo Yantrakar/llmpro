@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from agentspro import cli, setup
+from llmpro import cli, setup
 
 
 def snapshot(home, skip=('.agents', 'b-store', 'state')):
@@ -76,7 +76,7 @@ def test_setup_yes_does_everything(machine, capsys, onpath):
     assert (store / '.git').is_dir()
     for name in ('pre-commit', 'pre-merge-commit', 'pre-push'):
         hook = store / '.git' / 'hooks' / name
-        assert hook.read_text() == f'#!/bin/sh\nexec agentspro hook {name} "$@"\n'
+        assert hook.read_text() == f'#!/bin/sh\nexec llmpro hook {name} "$@"\n'
         assert os.access(hook, os.X_OK)
     assert subprocess.run(['git', '-C', str(store), 'config', 'merge.ours.driver'], capture_output=True, text=True).stdout.strip() == 'true'
     link = machine / '.claude/projects'
@@ -97,21 +97,21 @@ def test_setup_yes_does_everything(machine, capsys, onpath):
     assert (machine / '.claude/settings.json').read_text() == '{"fake": true}\n'
     # the undo script: where it is, its mode, the state folder's mode
     path = undo_path(out)
-    assert path.startswith(str(machine / 'state/agentspro/'))
+    assert path.startswith(str(machine / 'state/llmpro/'))
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o700
-    assert stat.S_IMODE(os.stat(machine / 'state/agentspro').st_mode) == 0o700
+    assert stat.S_IMODE(os.stat(machine / 'state/llmpro').st_mode) == 0o700
 
 
 def test_second_setup_shows_nothing_missing(machine, capsys, onpath):
     assert run(['setup', '-y'], capsys)[0] == 0
-    scripts = os.listdir(machine / 'state/agentspro')
+    scripts = os.listdir(machine / 'state/llmpro')
     code, out, _ = run(['setup', '-n'], capsys)
     assert code == 0 and 'missing' not in out
     before = snapshot(machine)
     code, out, _ = run(['setup', '-y'], capsys)
     assert code == 0 and 'in place' in out and 'To undo' not in out
     assert snapshot(machine) == before
-    assert os.listdir(machine / 'state/agentspro') == scripts
+    assert os.listdir(machine / 'state/llmpro') == scripts
 
 
 def test_dry_run_json(machine, capsys, onpath):
@@ -146,7 +146,7 @@ def test_undo_restores_existing_hooks_and_hookspath(machine, capsys, onpath, sto
     assert 'unset core.hooksPath' in said and 'set in the store: hook pre-commit' in said
     assert 'core.hooksPath' not in said.split('set in the store:')[1].split('\n')[0]  # never listed as a thing to set
     assert subprocess.run(['git', '-C', store, 'config', 'core.hooksPath'], capture_output=True).returncode != 0
-    assert 'agentspro hook' in open(hook).read()
+    assert 'llmpro hook' in open(hook).read()
     subprocess.run(['sh', undo_path(out)], check=True)
     assert sh('config', 'core.hooksPath') == 'tools/hooks'
     assert open(hook).read() == '#!/bin/sh\necho "mine"\n'
