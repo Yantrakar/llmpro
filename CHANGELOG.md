@@ -49,7 +49,10 @@ All notable changes to llmpro (developed as agentspro). The format follows
 
 ### Changed
 
-- The project is now called llmpro. The `agentspro` command keeps working for now and
-  says on stderr that the name changed. Hooks and merge drivers set up under the old
-  name are still recognised. New undo scripts go to `$XDG_STATE_HOME/llmpro`; earlier
-  ones are still found under the old name.
+- The project is now called llmpro, and so is the command. There is no `agentspro`
+  command any more. Coming from agentspro: install llmpro, run `llmpro setup` (it
+  rewrites the store's hooks and merge driver that still call `agentspro`), then
+  `pipx uninstall agentspro`. If agentspro goes first, a commit in the store fails,
+  because its hooks call a command that is gone; `llmpro setup` or `llmpro sync` fixes
+  that. New undo scripts go to
+  `$XDG_STATE_HOME/llmpro`; earlier ones are still found under the old name.

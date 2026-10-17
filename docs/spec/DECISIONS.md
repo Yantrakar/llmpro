@@ -21,11 +21,12 @@ that another program (the VS Code extension) relies on.
 Group `llmpro.plugins`; contract name `llmpro-plugin.v1` (03). The three built-in plugins (`memory`,
 `secrets`, `git`) register the same way an outside package would.
 
-## I3. Rename to llmpro, keep agentspro as an alias
+## I3. Rename to llmpro, no agentspro command
 
-Distribution, import package and command become `llmpro`. The `agentspro` command stays through 0.x: it
-runs the same code and prints one line on stderr that the name changed. `hook` and `merge-driver` print
-nothing under either name. The store's `.agentspro/` folder, the `.git/agentspro/` cache and
+Distribution, import package and command become `llmpro`. Changed on 2026-10-17 by the user: the
+`agentspro` command is retired, not kept as an alias. Hooks and merge drivers that still say `agentspro`
+count as missing, so `llmpro setup` and `llmpro sync` rewrite them; `llmpro uninstall` still removes
+them. (Package 02 built the alias; it was taken out after wave 4.) The store's `.agentspro/` folder, the `.git/agentspro/` cache and
 `$AGENTS_STORE` keep their names. The undo scripts move to `$XDG_STATE_HOME/llmpro/`; the old
 `$XDG_STATE_HOME/agentspro/` is still read where llmpro looks for earlier undo scripts.
 

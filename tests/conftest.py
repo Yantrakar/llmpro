@@ -6,7 +6,7 @@
   machine       a temporary HOME with fake tool folders and XDG_STATE_HOME under it
   tools_dir     (autouse) an empty folder that $LLMPRO_TOOL_PATH points at, so `tools.which` finds nothing
                 unless a test puts a fake program there; also sets LLMPRO_GITPRO to a path that does not
-                exist and LLMPRO_NO_RENAME_NOTE=1, and resets the gitpro and plugin caches around each test
+                exist, and resets the gitpro and plugin caches around each test
   fake_gitpro   a fake `gitpro` (tests/fakes/fake_gitpro.py) that LLMPRO_GITPRO points at:
                   fg.version(v='0.4.0', capabilities=(...))   the answer to --version --json
                   fg.answer(argv, stdout, exit=0)             the answer to one exact argv
@@ -36,7 +36,6 @@ def tools_dir(tmp_path, monkeypatch):
     d.mkdir()
     monkeypatch.setenv('LLMPRO_TOOL_PATH', str(d))
     monkeypatch.setenv('LLMPRO_GITPRO', str(tmp_path / 'no-such-gitpro'))
-    monkeypatch.setenv('LLMPRO_NO_RENAME_NOTE', '1')
     gitpro.reset_cache()
     plugins.reset_cache()
     yield d

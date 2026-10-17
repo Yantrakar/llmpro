@@ -26,8 +26,8 @@ from . import check, store as cfg
 
 HOOK_NAMES = ('pre-commit', 'pre-merge-commit', 'pre-push')
 MERGE_DRIVER = 'llmpro merge-driver manifest %O %A %B'
-# What stores set up before the rename say. They still work (the old command is an alias), so they
-# count as set up; setup and uninstall accept both texts.
+# What stores set up before the rename say. The old command is gone, so sync and setup rewrite them;
+# uninstall still knows them as llmpro's and removes them.
 OLD_MERGE_DRIVER = 'agentspro merge-driver manifest %O %A %B'
 OLD_HOOK_TEXT = '#!/bin/sh\nexec agentspro hook {name} "$@"\n'
 
@@ -69,7 +69,7 @@ def hook_text(name):
 
 
 def hook_is_ours(name, text):
-    """Is this the hook script llmpro writes, or the one it wrote under its old name?"""
+    """Is this the hook script llmpro writes, or the one it wrote under its old name? (For uninstall.)"""
     return text in (hook_text(name), OLD_HOOK_TEXT.format(name=name))
 
 
@@ -86,7 +86,7 @@ def repair_git_settings(store):
             have = open(path, encoding='utf-8').read()
         except OSError:
             have = None
-        if not hook_is_ours(name, have):
+        if have != want:
             tmp = f'{path}.tmp{os.getpid()}'
             with open(tmp, 'w', encoding='utf-8') as fh:
                 fh.write(want)
@@ -97,7 +97,7 @@ def repair_git_settings(store):
         git(store, 'config', '--local', '--unset', 'core.hooksPath')
     driver = subprocess.run(['git', '-C', store, 'config', '--local', '--get', 'merge.manifest.driver'],
                             capture_output=True, text=True).stdout.strip()
-    if driver not in (MERGE_DRIVER, OLD_MERGE_DRIVER):
+    if driver != MERGE_DRIVER:
         git(store, 'config', '--local', 'merge.manifest.driver', MERGE_DRIVER)
     git(store, 'config', '--local', 'merge.ours.driver', 'true')
 

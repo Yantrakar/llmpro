@@ -235,9 +235,9 @@ def git_settings_missing(store):
             have = open(os.path.join(hd, name), encoding='utf-8').read()
         except OSError:
             have = None
-        if not hook_is_ours(name, have):
+        if have != hook_text(name):
             missing.append(f'hook {name}')
-    if config_get(store, 'merge.manifest.driver') not in (MERGE_DRIVER, OLD_MERGE_DRIVER):
+    if config_get(store, 'merge.manifest.driver') != MERGE_DRIVER:
         missing.append('merge.manifest.driver')
     if config_get(store, 'merge.ours.driver') != 'true':
         missing.append('merge.ours.driver')
@@ -273,7 +273,7 @@ def apply_settings(store, undo):
             mode = os.stat(path).st_mode & 0o777
         except OSError:
             old, mode = None, 0o755
-        if hook_is_ours(name, old):
+        if old == hook_text(name):
             continue
         if old is None:
             undo.run('rm', '-f', path)
@@ -282,8 +282,7 @@ def apply_settings(store, undo):
     for key in ('merge.manifest.driver', 'merge.ours.driver', 'core.hooksPath'):
         old = config_get(store, key)
         want = {'merge.manifest.driver': MERGE_DRIVER, 'merge.ours.driver': 'true'}.get(key)
-        if old == want or (key == 'merge.manifest.driver' and old == OLD_MERGE_DRIVER) \
-                or (key == 'core.hooksPath' and not hooks_path_is_old(old)):
+        if old == want or (key == 'core.hooksPath' and not hooks_path_is_old(old)):
             continue
         if old is None:
             undo.run('git', '-C', store, 'config', '--local', '--unset', key)

@@ -1,4 +1,4 @@
-"""The rename to llmpro, the alias, the --version JSON and the JSON envelope."""
+"""The rename to llmpro (the old command is retired), the --version JSON and the JSON envelope."""
 import importlib.util
 import json
 import re
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import llmpro
-from llmpro import cli, hot, jsonout, mcp, setup, sync
+from llmpro import cli, jsonout, mcp, setup, sync
 
 OLD_HOOK = '#!/bin/sh\nexec agentspro hook {name} "$@"\n'
 OLD_DRIVER = 'agentspro merge-driver manifest %O %A %B'
@@ -61,29 +61,11 @@ def test_envelope():
     assert jsonout.envelope('x', [1], False) == {'ok': False, 'command': 'x', 'results': [1]}
 
 
-def test_alias_prints_note_once(monkeypatch, capsys):
-    monkeypatch.delenv('LLMPRO_NO_RENAME_NOTE', raising=False)
-    monkeypatch.setattr(sys, 'argv', ['agentspro', '--version'])
-    assert cli.alias_main() == 0
-    captured = capsys.readouterr()
-    assert captured.err == 'agentspro is now llmpro; this name keeps working for now\n'
-    assert captured.out.strip() == f'llmpro {llmpro.__version__}'
-
-
-def test_alias_note_can_be_silenced(monkeypatch, capsys):
-    monkeypatch.setenv('LLMPRO_NO_RENAME_NOTE', '1')
-    assert cli.alias_main(['--version']) == 0
-    assert capsys.readouterr().err == ''
-
-
-@pytest.mark.parametrize('first', ['hook', 'merge-driver'])
-def test_alias_is_silent_for_hooks(first, monkeypatch, capsys):
-    monkeypatch.delenv('LLMPRO_NO_RENAME_NOTE', raising=False)
-    calls = []
-    monkeypatch.setattr(hot, 'main', lambda argv: calls.append(argv) or 0)
-    assert cli.alias_main([first, 'x']) == 0
-    assert calls == [[first, 'x']]
-    assert capsys.readouterr().err == ''
+def test_the_old_command_is_gone():
+    text = (SRC.parent.parent / 'pyproject.toml').read_text()
+    scripts = text.split('[project.scripts]')[1].split('\n[')[0]
+    assert [line.split('=')[0].strip() for line in scripts.strip().splitlines()] == ['llmpro']
+    assert not hasattr(cli, 'alias_main')
 
 
 def test_json_outputs_have_the_envelope(store, capsys):
@@ -109,14 +91,29 @@ def test_json_outputs_have_the_envelope(store, capsys):
     assert {'redact_version', 'git_settings_missing', 'sessions', 'hub', 'unread_sources'} <= set(got)
 
 
-def test_old_hooks_and_driver_are_not_missing(store, capsys):
+def test_old_hooks_and_driver_are_missing(store, capsys):
+    # they call `agentspro`, which no longer exists
     old_style(store)
-    assert setup.git_settings_missing(store) == []
+    assert setup.git_settings_missing(store) == [*(f'hook {n}' for n in sync.HOOK_NAMES), 'merge.manifest.driver']
     code, got = run_json(['--store', store, 'setup', '-n', '--json'], capsys)
     item = next(i for i in got['items'] if i['name'] == 'git settings')
-    assert item['present'] is True
-    sync.repair_git_settings(store)  # does not rewrite them
-    assert (Path(sync.hooks_dir(store)) / 'pre-commit').read_text() == OLD_HOOK.format(name='pre-commit')
+    assert item['present'] is False
+
+
+def test_sync_rewrites_old_hooks_and_driver(store):
+    old_style(store)
+    sync.repair_git_settings(store)
+    assert setup.git_settings_missing(store) == []
+    assert (Path(sync.hooks_dir(store)) / 'pre-commit').read_text() == sync.hook_text('pre-commit')
+
+
+def test_setup_rewrites_old_hooks_and_the_undo_puts_them_back(machine, store, capsys):
+    old_style(store)
+    undo = setup.Undo()
+    setup.apply_settings(store, undo)
+    assert setup.git_settings_missing(store) == []
+    script = '\n'.join(undo.lines)
+    assert 'exec agentspro hook pre-commit' in script and OLD_DRIVER in script
 
 
 def test_uninstall_removes_old_hooks_and_driver(machine, store, capsys):
@@ -153,10 +150,7 @@ def test_mcp_server_name(store):
 
 # The only lines under src/llmpro that may say "agentspro": (file, text the line must contain).
 ALLOWED = [
-    ('cli.py', 'agentspro is now llmpro'),
-    ('cli.py', 'alias_main'),
     ('cli.py', '.git/agentspro'),
-    ('cli.py', 'The `agentspro` command'),
     ('check.py', '.agentspro/allowlist.json'),
     ('check.py', '.git/agentspro'),
     ('check.py', "'agentspro')"),

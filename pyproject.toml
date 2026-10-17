@@ -21,7 +21,6 @@ git = "llmpro.plugins.git:plugin"
 
 [project.scripts]
 llmpro = "llmpro.cli:main"
-agentspro = "llmpro.cli:alias_main"
 
 [tool.hatch.version]
 path = "src/llmpro/__init__.py"

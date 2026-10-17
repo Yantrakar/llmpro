@@ -6,7 +6,6 @@ import sys
 CAPABILITIES = ('check', 'check.json', 'find', 'find.json', 'mcp', 'setup', 'setup.dry-run', 'summary', 'sync',
                 'sync.dry-run', 'uninstall', 'version.json')
 
-RENAME_NOTE = 'agentspro is now llmpro; this name keeps working for now'
 
 PLUGIN_COMMANDS = {}  # command name -> handler(args, store), filled by build_parser from the plugins
 
@@ -207,16 +206,6 @@ def main(argv=None):
             return exc.code or 0
         print(exc.code, file=sys.stderr)
         return 2
-
-
-def alias_main(argv=None):
-    """The `agentspro` command: the same as `llmpro`, with one line on stderr saying the name changed. Hooks
-    and the merge driver run under the old name in stores set up before the rename, and stay silent."""
-    import os
-    argv = sys.argv[1:] if argv is None else list(argv)
-    if not (argv and argv[0] in ('hook', 'merge-driver')) and os.environ.get('LLMPRO_NO_RENAME_NOTE') != '1':
-        print(RENAME_NOTE, file=sys.stderr)
-    return main(argv)
 
 
 if __name__ == '__main__':

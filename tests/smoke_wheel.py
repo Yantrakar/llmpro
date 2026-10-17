@@ -41,7 +41,7 @@ def smoke(wheel):
 
         entry_points = next(n for n in names if n.endswith('.dist-info/entry_points.txt'))
         scripts = zipfile.Path(wheel, entry_points).read_text()
-        assert 'llmpro = llmpro.cli:main' in scripts and 'agentspro = llmpro.cli:alias_main' in scripts, scripts
+        assert 'llmpro = llmpro.cli:main' in scripts and 'agentspro' not in scripts, scripts
         result = run('--version', '--json')
         assert result.returncode == 0 and json.loads(result.stdout)['command'] == 'version', result
 
