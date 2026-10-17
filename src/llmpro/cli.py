@@ -110,7 +110,7 @@ def version_json():
 
 
 def run(argv):
-    if '--version' in argv and '--json' in argv:
+    if sorted(argv) == ['--json', '--version']:  # argparse's --version exits before --json is read
         return version_json()
     args = build_parser().parse_args(argv)
     if not args.cmd:
