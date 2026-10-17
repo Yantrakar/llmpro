@@ -1,4 +1,4 @@
-"""`agentspro sync`: tools/sync.sh in Python, same order and same checks.
+"""`llmpro sync`: tools/sync.sh in Python, same order and same checks.
 
 Import new and changed sessions from every tool on this machine, commit them, then exchange commits with
 the hub repo (remote "hub", a bare repo on one of the person's machines) if one is set up.
@@ -21,11 +21,15 @@ import sys
 import tempfile
 import time
 
-import agentspro
+import llmpro
 from . import check, store as cfg
 
 HOOK_NAMES = ('pre-commit', 'pre-merge-commit', 'pre-push')
-MERGE_DRIVER = 'agentspro merge-driver manifest %O %A %B'
+MERGE_DRIVER = 'llmpro merge-driver manifest %O %A %B'
+# What stores set up before the rename say. They still work (the old command is an alias), so they
+# count as set up; setup and uninstall accept both texts.
+OLD_MERGE_DRIVER = 'agentspro merge-driver manifest %O %A %B'
+OLD_HOOK_TEXT = '#!/bin/sh\nexec agentspro hook {name} "$@"\n'
 
 
 class SyncFailed(Exception):
@@ -61,12 +65,17 @@ def hooks_dir(store):
 
 
 def hook_text(name):
-    return f'#!/bin/sh\nexec agentspro hook {name} "$@"\n'
+    return f'#!/bin/sh\nexec llmpro hook {name} "$@"\n'
+
+
+def hook_is_ours(name, text):
+    """Is this the hook script llmpro writes, or the one it wrote under its old name?"""
+    return text in (hook_text(name), OLD_HOOK_TEXT.format(name=name))
 
 
 def repair_git_settings(store):
     """Settings git does not carry between clones: set them on every run, in this store only. The hooks are
-    one-line scripts that run `agentspro hook <name>`; core.hooksPath is unset if it still points to the
+    one-line scripts that run `llmpro hook <name>`; core.hooksPath is unset if it still points to the
     old tools/hooks."""
     hooks = hooks_dir(store)
     os.makedirs(hooks, exist_ok=True)
@@ -77,7 +86,7 @@ def repair_git_settings(store):
             have = open(path, encoding='utf-8').read()
         except OSError:
             have = None
-        if have != want:
+        if not hook_is_ours(name, have):
             tmp = f'{path}.tmp{os.getpid()}'
             with open(tmp, 'w', encoding='utf-8') as fh:
                 fh.write(want)
@@ -86,7 +95,10 @@ def repair_git_settings(store):
     cur = subprocess.run(['git', '-C', store, 'config', '--local', '--get', 'core.hooksPath'], capture_output=True, text=True)
     if cur.returncode == 0 and cur.stdout.strip().rstrip('/').endswith('tools/hooks'):
         git(store, 'config', '--local', '--unset', 'core.hooksPath')
-    git(store, 'config', '--local', 'merge.manifest.driver', MERGE_DRIVER)
+    driver = subprocess.run(['git', '-C', store, 'config', '--local', '--get', 'merge.manifest.driver'],
+                            capture_output=True, text=True).stdout.strip()
+    if driver not in (MERGE_DRIVER, OLD_MERGE_DRIVER):
+        git(store, 'config', '--local', 'merge.manifest.driver', MERGE_DRIVER)
     git(store, 'config', '--local', 'merge.ours.driver', 'true')
 
 
@@ -100,10 +112,10 @@ def store_redact_version():
 
 def too_new():
     """The store was written by a newer redactor than this tool has."""
-    return store_redact_version() > agentspro.REDACT_VERSION
+    return store_redact_version() > llmpro.REDACT_VERSION
 
 
-TOO_NEW_MESSAGE = 'upgrade agentspro: the store was written by a newer redactor'
+TOO_NEW_MESSAGE = 'upgrade llmpro: the store was written by a newer redactor'
 
 
 def set_redact_version(path, number):
@@ -179,7 +191,7 @@ def run(store, local=False, quiet=False):
     """-> exit status: 0 done, 1 a step failed (message on stderr). The store's config.toml must be loaded."""
     check_store(store)
     if too_new():
-        print(f'sync: {TOO_NEW_MESSAGE} (store {store_redact_version()}, this tool {agentspro.REDACT_VERSION})', file=sys.stderr)
+        print(f'sync: {TOO_NEW_MESSAGE} (store {store_redact_version()}, this tool {llmpro.REDACT_VERSION})', file=sys.stderr)
         return 2
     start = time.time()
 
@@ -232,10 +244,10 @@ def _run(store, local, say, hub):
     except Exception as exc:
         print(f'{type(exc).__name__}: {exc}', file=sys.stderr)
         raise SyncFailed('import failed')
-    if store_redact_version() < agentspro.REDACT_VERSION:
-        say(f'recording redact_version = {agentspro.REDACT_VERSION} in config.toml')
-        set_redact_version(cfg.CONFIG_FILE, agentspro.REDACT_VERSION)
-        cfg.CONFIG.setdefault('store', {})['redact_version'] = agentspro.REDACT_VERSION
+    if store_redact_version() < llmpro.REDACT_VERSION:
+        say(f'recording redact_version = {llmpro.REDACT_VERSION} in config.toml')
+        set_redact_version(cfg.CONFIG_FILE, llmpro.REDACT_VERSION)
+        cfg.CONFIG.setdefault('store', {})['redact_version'] = llmpro.REDACT_VERSION
     git(store, 'add', '-A')
     if not ok(store, 'diff', '--cached', '--quiet'):
         n = len(out(store, 'diff', '--cached', '--name-only').splitlines())
@@ -243,7 +255,7 @@ def _run(store, local, say, hub):
         stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
         r = subprocess.run(['git', '-C', store, 'commit', '-q', '-m', f'sync {cfg.MACHINE} {stamp}: new and changed sessions'])
         if r.returncode != 0:
-            raise SyncFailed(f'secret check failed; nothing committed. Run `agentspro check --context --store {store}`')
+            raise SyncFailed(f'secret check failed; nothing committed. Run `llmpro check --context --store {store}`')
 
     if local:
         return
@@ -332,28 +344,27 @@ def hub_position(store):
 
 def dry_run(store, as_json=False):
     """`sync -n`: what a sync would do. Changes nothing, logs in nowhere, fetches nothing. -> exit status."""
-    import json
-    from . import setup
+    from . import jsonout, setup
     check_store(store)
     have = store_redact_version()
     sessions = pending_sessions(store)
     url, branch, ahead, behind = hub_position(store)
     unread = [(t, p) for t, p in UNREAD_SOURCES if os.path.exists(os.path.join(cfg.home(), p))]
     settings = setup.git_settings_missing(store)
-    refused = have > agentspro.REDACT_VERSION
+    refused = have > llmpro.REDACT_VERSION
     if as_json:
-        print(json.dumps({
-            'redact_version': {'store': have, 'tool': agentspro.REDACT_VERSION, 'refused': refused},
+        jsonout.emit('sync', {
+            'redact_version': {'store': have, 'tool': llmpro.REDACT_VERSION, 'refused': refused},
             'git_settings_missing': settings,
             'sessions': {t: {'new': n, 'changed': c} for t, (n, c) in sessions.items()},
             'hub': None if url is None else {'url': url, 'branch': branch, 'ahead': ahead, 'behind': behind},
-            'unread_sources': [{'tool': t, 'path': p} for t, p in unread]}))
+            'unread_sources': [{'tool': t, 'path': p} for t, p in unread]}, ok=not refused)
         return 2 if refused else 0
-    print('agentspro sync -n: nothing is changed, nobody is logged in to, nothing is fetched')
+    print('llmpro sync -n: nothing is changed, nobody is logged in to, nothing is fetched')
     if refused:
-        print(f'version     {TOO_NEW_MESSAGE} (store {have}, this tool {agentspro.REDACT_VERSION}); sync would stop')
-    elif have < agentspro.REDACT_VERSION:
-        print(f'version     sync would write redact_version = {agentspro.REDACT_VERSION} into config.toml (now {have})')
+        print(f'version     {TOO_NEW_MESSAGE} (store {have}, this tool {llmpro.REDACT_VERSION}); sync would stop')
+    elif have < llmpro.REDACT_VERSION:
+        print(f'version     sync would write redact_version = {llmpro.REDACT_VERSION} into config.toml (now {have})')
     else:
         print(f'version     redact_version {have}, as the tool')
     print('git         ' + ('sync would repair: ' + ', '.join(settings) if settings else 'settings in place'))

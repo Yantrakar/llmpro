@@ -1,4 +1,4 @@
-"""`agentspro mcp`: a stdio MCP server (JSON-RPC 2.0, one message per line). Standard library only.
+"""`llmpro mcp`: a stdio MCP server (JSON-RPC 2.0, one message per line). Standard library only.
 
 Tools: find, check (read-only, never --fix) and sync_status (sync -n). Each runs the command of the same name in
 a child process with --json and returns its output as text, so the terminal and the assistants see the same thing.
@@ -25,19 +25,19 @@ TOOLS = [
      'annotations': {'title': 'Find in the store', **READ_ONLY}},
     {'name': 'check',
      'description': 'Check the store for secrets and broken files, read-only. Returns JSON: passed, exit, output. '
-                    'To fix the memory index the person runs `agentspro check --fix`.',
+                    'To fix the memory index the person runs `llmpro check --fix`.',
      'inputSchema': {'type': 'object', 'properties': {}},
      'annotations': {'title': 'Check the store', **READ_ONLY}},
     {'name': 'sync_status',
-     'description': 'What `agentspro sync` would do (sync -n): new sessions, commits ahead and behind, missing '
-                    'git settings. Changes nothing. To sync the person runs `agentspro sync`.',
+     'description': 'What `llmpro sync` would do (sync -n): new sessions, commits ahead and behind, missing '
+                    'git settings. Changes nothing. To sync the person runs `llmpro sync`.',
      'inputSchema': {'type': 'object', 'properties': {}},
      'annotations': {'title': 'Sync status', **READ_ONLY}},
 ]
 
 
 def command(name, args):
-    """-> the agentspro arguments for a tool call; ValueError if the arguments are wrong."""
+    """-> the llmpro arguments for a tool call; ValueError if the arguments are wrong."""
     if name == 'check':
         return ['check', '--json']
     if name == 'sync_status':
@@ -69,7 +69,7 @@ def call(store, name, args):
         raise
     except ValueError as exc:
         return {'content': [{'type': 'text', 'text': str(exc)}], 'isError': True}
-    r = subprocess.run([sys.executable, '-m', 'agentspro', '--store', store] + cmd,
+    r = subprocess.run([sys.executable, '-m', 'llmpro', '--store', store] + cmd,
                        capture_output=True, text=True, stdin=subprocess.DEVNULL)
     # 0 ok and 1 "problems or nothing found" are answers; 2 is an error
     if r.returncode in (0, 1):
@@ -94,7 +94,7 @@ def handle(store, msg):
     if method == 'initialize':
         from . import __version__
         return reply({'protocolVersion': PROTOCOL, 'capabilities': {'tools': {'listChanged': False}},
-                      'serverInfo': {'name': 'agentspro', 'version': __version__}})
+                      'serverInfo': {'name': 'llmpro', 'version': __version__}})
     if method == 'ping':
         return reply({})
     if method == 'tools/list':

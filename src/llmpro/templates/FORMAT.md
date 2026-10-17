@@ -85,18 +85,18 @@ Dropped: system and developer prompts, injected context (environment blocks, AGE
 
 - Heading times are the machine's local time. Frontmatter times are ISO-8601 with the UTC offset.
 - A new heading starts only when the speaker changes. Tool calls always sit under an assistant heading.
-- Secrets in any text are replaced with `[REDACTED:<kind>]`. The patterns are in agentspro's redact.py and lean towards removing too much.
+- Secrets in any text are replaced with `[REDACTED:<kind>]`. The patterns are in llmpro's redact.py and lean towards removing too much.
 - Sessions with no user turns are not written (manifest status `skipped:empty`). Subagent and approval-reviewer sessions are not written either (`skipped:subagent`).
 - opencode keeps its sessions in one SQLite file. Its source_file is `<db path>#session/<id>`.
 
 ## Re-running
 
 ```
-agentspro sync --local                 # import every tool, commit
-agentspro sync                         # the same, then exchange commits with the hub
-agentspro check [--staged|--history]   # secret check
-agentspro summary CONV TEXT            # set a conversation's summary
-agentspro summary --from FILE.jsonl    # lines: {"id": "tool:id", "summary": "..."}
+llmpro sync --local                 # import every tool, commit
+llmpro sync                         # the same, then exchange commits with the hub
+llmpro check [--staged|--history]   # secret check
+llmpro summary CONV TEXT            # set a conversation's summary
+llmpro summary --from FILE.jsonl    # lines: {"id": "tool:id", "summary": "..."}
 ```
 
 Facts pulled out of conversations can be added by hand to a memory under a `## Added in the store` section, or as a new memory. The importer keeps that section when it re-imports a changed source memory.
@@ -111,4 +111,4 @@ Each tool loads AGENTS.md through one pointer outside the store, and finds its s
 - Claude Code: `@<store>/AGENTS.md` in ~/.claude/CLAUDE.md.
 - Other tools: point their instruction or skills folder at the store the same way.
 - Each tool's session folder (~/.claude/projects, ~/.codex/sessions, ...) may link into sessions/.
-- The hub, a bare git repo reachable over ssh, is the remote that `agentspro sync` exchanges commits with.
+- The hub, a bare git repo reachable over ssh, is the remote that `llmpro sync` exchanges commits with.

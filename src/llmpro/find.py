@@ -1,13 +1,13 @@
-"""`agentspro find`: search the conversations and memories of the store. Plain reading, no index.
+"""`llmpro find`: search the conversations and memories of the store. Plain reading, no index.
 
 Reads history/ and memory/ (and local/history/, which exists on this machine only). Never reads sessions/.
 Case-insensitive; the words of the query must all occur in the same file.
 """
-import json
 import os
 import re
 import sys
 
+from . import jsonout
 from .redact import parse_frontmatter
 
 LINE_LIMIT = 160
@@ -128,7 +128,7 @@ def run(store, query, machine=None, tool=None, since=None, history=True, memory=
     """-> 0 if anything was found, 1 if not."""
     hits = search(store, query, machine, tool, since, history, memory, verbose)
     if as_json:
-        print(json.dumps(hits, ensure_ascii=False))
+        jsonout.emit('find', hits)
     else:
         for line in render(hits, verbose):
             print(line)

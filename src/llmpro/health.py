@@ -1,4 +1,4 @@
-"""Store health: the checks of `agentspro check` that are not about secrets (spec 3.4).
+"""Store health: the checks of `llmpro check` that are not about secrets (spec 3.4).
 
 A stale memory/INDEX.md, a memory without the frontmatter FORMAT.md asks for, a history file that
 manifest.jsonl does not list. Only the index can be fixed by the tool.

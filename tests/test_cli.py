@@ -1,10 +1,10 @@
-"""Flags and exit codes of the agentspro command."""
+"""Flags and exit codes of the llmpro command."""
 import json
 import os
 import subprocess
 import sys
 
-from agentspro import cli
+from llmpro import cli
 
 
 def test_no_command_is_usage_error(capsys):
@@ -54,10 +54,10 @@ def test_sync_local_commits_and_installs_hooks(store, capsys, monkeypatch):
         fh.write('hello\n')
     assert cli.main(['sync', '--local', '-q', '--store', store]) == 0
     hook = os.path.join(store, '.git', 'hooks', 'pre-commit')
-    assert open(hook).read() == '#!/bin/sh\nexec agentspro hook pre-commit "$@"\n'
+    assert open(hook).read() == '#!/bin/sh\nexec llmpro hook pre-commit "$@"\n'
     assert os.access(hook, os.X_OK)
     drv = subprocess.run(['git', '-C', store, 'config', 'merge.manifest.driver'], capture_output=True, text=True).stdout
-    assert drv.strip() == 'agentspro merge-driver manifest %O %A %B'
+    assert drv.strip() == 'llmpro merge-driver manifest %O %A %B'
 
 
 def test_sync_refuses_store_inside_another_repo(store, tmp_path, capsys):
@@ -72,5 +72,5 @@ def test_hook_usage_error():
 
 
 def test_module_entry_point(store):
-    r = subprocess.run([sys.executable, '-m', 'agentspro', 'check', '--store', store], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, '-m', 'llmpro', 'check', '--store', store], capture_output=True, text=True)
     assert r.returncode == 0

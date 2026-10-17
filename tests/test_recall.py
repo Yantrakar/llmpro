@@ -23,8 +23,8 @@ import sys
 import unittest
 import urllib.parse
 
-from agentspro import check as secretcheck
-from agentspro import redact as common
+from llmpro import check as secretcheck
+from llmpro import redact as common
 
 TOOLS = ('redact', 'scan', 'collect')
 DASH = '-' * 5

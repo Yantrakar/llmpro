@@ -6,7 +6,7 @@ private it makes a tag and a GitHub release in this repo, with the wheel, the sd
 
 ## Make a release
 
-1. Set the version in `src/agentspro/__init__.py`.
+1. Set the version in `src/llmpro/__init__.py`.
 2. In `CHANGELOG.md`, give that version a section headed `## X.Y.Z (YYYY-MM-DD)`, with
    the release date. A section marked `(unreleased)` stops the run.
 3. Commit, and push to `main`.
