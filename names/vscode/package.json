@@ -1,0 +1,12 @@
+{
+  "name": "llmpro",
+  "displayName": "llmpro",
+  "description": "Keep your AI tools' skills, memory and history in one place, and keep secrets and the wrong git identity out of them. Not released yet.",
+  "version": "0.0.1",
+  "publisher": "yantrakar",
+  "license": "MIT",
+  "homepage": "https://yantrakar.com",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "keywords": ["ai", "llm", "agents", "memory", "skills"]
+}
