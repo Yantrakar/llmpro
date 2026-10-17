@@ -1,0 +1,38 @@
+name: CI
+
+# Runs before a PR is accepted, once per push to it; a newer push cancels the
+# older run. It can also be run by hand on any branch, or called by Release;
+# such a run has a group of its own (its run ID, or the caller's), so it never
+# cancels a PR run and is never cancelled by one.
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: git --version
+      - run: pip install -e '.[test]'
+      - run: pytest -v
+      - run: python -m pip wheel --no-deps --wheel-dir dist .
+      - run: python tests/smoke_wheel.py dist/*.whl
