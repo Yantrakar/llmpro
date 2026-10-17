@@ -228,7 +228,8 @@ def test_builtin_capabilities(fake_gitpro):
     git = plugins.get('git')
     assert 'git' in git.capabilities(ctx) and 'git.why' in git.capabilities(ctx)
     assert git.mcp_child(ctx) == [fake_gitpro.path, 'mcp']
-    assert all(p.setup_items(ctx) == [] for p in plugins.load())
+    # what each plugin's setup items are is tested with the package that adds them (05, 06, 08)
+    assert all(isinstance(p.setup_items(ctx), list) for p in plugins.load())
 
 
 def test_git_plugin_when_gitpro_is_missing_or_old(fake_gitpro):
