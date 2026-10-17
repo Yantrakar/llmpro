@@ -213,8 +213,10 @@ def run(store, local=False, quiet=False):
     def term(signum, frame):
         raise SystemExit(1)
     old = {s: signal.signal(s, term) for s in (signal.SIGTERM, signal.SIGHUP)}
+    cfg.privacy_begin()
     try:
         _run(store, local, say, hub)
+        report_now_local(cfg.NOW_LOCAL)
         return 0
     except SyncFailed as exc:
         print(f'sync: {exc}', file=sys.stderr)
@@ -224,10 +226,24 @@ def run(store, local=False, quiet=False):
         hub.close()
         for s, h in old.items():
             signal.signal(s, h)
+        cfg.privacy_end()
         lock.close()
 
 
+def report_now_local(outputs, stream=None):
+    """Chats already shared that now place as local by identity: say so, one line each, then a count."""
+    stream = stream or sys.stderr
+    for rel in outputs:
+        print(f'already shared, now local by identity: {rel}; move it by hand (see FORMAT.md)', file=stream)
+    if outputs:
+        n = len(outputs)
+        print(f'sync: {n} chat{"s" if n != 1 else ""} already shared, now local by identity', file=stream)
+
+
 def _run(store, local, say, hub):
+    reason = cfg.privacy_stop_reason()
+    if reason:
+        raise SyncFailed(reason)
     repair_git_settings(store)
     url = subprocess.run(['git', '-C', store, 'remote', 'get-url', 'hub'], capture_output=True, text=True)
     if not local and url.returncode == 0:
@@ -342,6 +358,23 @@ def hub_position(store):
     return url.stdout.strip(), branch, ahead, behind
 
 
+def now_local_chats(store):
+    """-> outputs of shared chats of this machine whose project now places as local by identity. Reads the
+    manifest and the chats' frontmatter; asks gitpro (read-only); writes nothing."""
+    if not cfg.LOCAL_IDENTITIES:
+        return []
+    from .redact import is_local_only, load_manifest, read_frontmatter
+    found = []
+    for row in load_manifest(store).values():
+        out = row['output']
+        if row['machine'] != cfg.MACHINE or row['kind'] != 'conversation' or not out or out.startswith('local/'):
+            continue
+        project = read_frontmatter(os.path.join(store, out))[0].get('project', '')
+        if project and not is_local_only(row['source_path'], project) and cfg.is_local_project(project):
+            found.append(out)
+    return sorted(found)
+
+
 def dry_run(store, as_json=False):
     """`sync -n`: what a sync would do. Changes nothing, logs in nowhere, fetches nothing. -> exit status."""
     from . import jsonout, setup
@@ -352,14 +385,19 @@ def dry_run(store, as_json=False):
     unread = [(t, p) for t, p in UNREAD_SOURCES if os.path.exists(os.path.join(cfg.home(), p))]
     settings = setup.git_settings_missing(store)
     refused = have > llmpro.REDACT_VERSION
+    cfg.privacy_begin()
+    stop = cfg.privacy_stop_reason()
+    now_local = [] if stop else now_local_chats(store)
     if as_json:
         jsonout.emit('sync', {
             'redact_version': {'store': have, 'tool': llmpro.REDACT_VERSION, 'refused': refused},
             'git_settings_missing': settings,
             'sessions': {t: {'new': n, 'changed': c} for t, (n, c) in sessions.items()},
             'hub': None if url is None else {'url': url, 'branch': branch, 'ahead': ahead, 'behind': behind},
-            'unread_sources': [{'tool': t, 'path': p} for t, p in unread]}, ok=not refused)
-        return 2 if refused else 0
+            'now_local': now_local,
+            'stop_reason': stop or None,
+            'unread_sources': [{'tool': t, 'path': p} for t, p in unread]}, ok=not refused and not stop)
+        return 2 if refused else 1 if stop else 0
     print('llmpro sync -n: nothing is changed, nobody is logged in to, nothing is fetched')
     if refused:
         print(f'version     {TOO_NEW_MESSAGE} (store {have}, this tool {llmpro.REDACT_VERSION}); sync would stop')
@@ -367,6 +405,8 @@ def dry_run(store, as_json=False):
         print(f'version     sync would write redact_version = {llmpro.REDACT_VERSION} into config.toml (now {have})')
     else:
         print(f'version     redact_version {have}, as the tool')
+    if stop:
+        print(f'privacy     sync would stop: {stop}')
     print('git         ' + ('sync would repair: ' + ', '.join(settings) if settings else 'settings in place'))
     for tool, (n, c) in sessions.items():
         print(f'sessions    {tool:12} {n} new, {c} changed')
@@ -378,4 +418,5 @@ def dry_run(store, as_json=False):
         print(f'hub         {url} ({branch}): {ahead} commits ahead, {behind} behind, as of the last fetch')
     for tool, path in unread:
         print(f'unread      ~/{path} ({tool}): found, no importer reads it')
-    return 2 if refused else 0
+    report_now_local(now_local, sys.stdout)
+    return 2 if refused else 1 if stop else 0

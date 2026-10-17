@@ -20,7 +20,7 @@ import re
 import sys
 import urllib.parse
 
-from ..redact import (MACHINE, frontmatter, is_local_only, load_manifest, manifest_entry,
+from ..redact import (MACHINE, frontmatter, is_local_project, load_manifest, manifest_entry,
                       read_frontmatter, redact, save_manifest, write_text)
 from ..store import LOCAL_ONLY, data_file, home
 
@@ -60,7 +60,7 @@ def session_cwd(slug):
 def claude_local_only(slug):
     """A project slug under a local-only folder ([privacy] in config.toml): by its sessions' folder, or by
     the slug itself, which is the folder with every other character turned into '-'."""
-    if is_local_only(session_cwd(slug)):
+    if is_local_project(session_cwd(slug)):
         return True
     return any(slug == s or slug.startswith(s + '-') for s in (re.sub(r'[^A-Za-z0-9]', '-', d) for d in LOCAL_ONLY))
 
@@ -108,7 +108,7 @@ def copilot_sources():
                 scope = re.sub(r'[^a-z0-9.]+', '-', folder.rstrip('/').rsplit('/', 1)[-1].lower()).strip('-') or 'global'
             except (OSError, ValueError):
                 pass
-            local = is_local_only(urllib.parse.unquote(folder[len('file://'):]) if folder.startswith('file://') else '')
+            local = is_local_project(urllib.parse.unquote(folder[len('file://'):]) if folder.startswith('file://') else '')
             for path in files:
                 yield scope, os.path.basename(ws) + '/' + os.path.relpath(path, root)[:-3], path, local
 

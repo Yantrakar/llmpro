@@ -3,6 +3,7 @@
 Nothing here is read when the module is imported: configure(path) loads the store's config.toml and fills
 the module-level names below, in place, so `from .store import LOCAL_ONLY` keeps seeing the current list.
 """
+import importlib
 import os
 import socket
 import sys
@@ -15,6 +16,8 @@ STORE = ''
 CONFIG_FILE = ''
 CONFIG = {}
 LOCAL_ONLY = []  # folders from config.toml [privacy] local_only, ~ expanded, without a trailing slash
+LOCAL_IDENTITIES = []  # gitpro identity ids from [privacy] local_identities; "default" is the default identity
+NOW_LOCAL = []  # outputs of chats already shared that now place as local by identity (filled while importing)
 QUIET = [False]  # progress lines off (-q)
 
 
@@ -51,6 +54,11 @@ def configure(store, required=True):
     except tomllib.TOMLDecodeError as exc:
         sys.exit(f'{CONFIG_FILE}: {exc}')
     LOCAL_ONLY[:] = config_paths('privacy', 'local_only')
+    ids = CONFIG.get('privacy', {}).get('local_identities', [])
+    if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+        sys.exit(f'{CONFIG_FILE}: [privacy] local_identities must be a list of identity ids')
+    LOCAL_IDENTITIES[:] = ids
+    privacy_begin()
     return CONFIG
 
 
@@ -72,3 +80,38 @@ def config_list(section, key):
 
 def is_local_only(*paths):
     return any(p and (p == d or p.startswith(d + os.sep)) for p in paths for d in LOCAL_ONLY)
+
+
+def is_local_project(folder):
+    """Do the chats of this project folder stay in local/? True for a local_only folder, and, when
+    [privacy] local_identities is set, for a repo gitpro places under one of those identities or cannot
+    place. With local_identities empty this is is_local_only and privacy is not imported."""
+    if is_local_only(folder):
+        return True
+    if not LOCAL_IDENTITIES:
+        return False
+    privacy = importlib.import_module('llmpro.privacy')
+    return privacy.local_by_identity(folder)
+
+
+def privacy_begin():
+    """Start a run: forget the answers of the last one. Does nothing unless privacy was used."""
+    NOW_LOCAL[:] = []
+    mod = sys.modules.get('llmpro.privacy')
+    if mod:
+        mod.begin()
+
+
+def privacy_end(write=True):
+    """End a run: keep what gitpro answered (write=False for a dry run)."""
+    mod = sys.modules.get('llmpro.privacy')
+    if mod and write:
+        mod.save_cache()
+
+
+def privacy_stop_reason():
+    """-> why sync cannot run with local_identities set (gitpro missing or too old), or ''."""
+    if not LOCAL_IDENTITIES:
+        return ''
+    privacy = importlib.import_module('llmpro.privacy')
+    return privacy.stop_reason()
