@@ -8,5 +8,9 @@ class Memory(Plugin):
     def capabilities(self, ctx):
         return ['memory.sync', 'memory.find', 'memory.summary']
 
+    def setup_items(self, ctx):
+        from .. import register
+        return register.items(ctx)
+
 
 plugin = Memory()
