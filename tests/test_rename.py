@@ -51,7 +51,8 @@ def test_version_json_needs_no_store(home, capsys):
     code, got = run_json(['--version', '--json'], capsys)
     assert code == 0 and got['ok'] is True and got['command'] == 'version'
     assert got['version'] == llmpro.__version__ and got['python']
-    assert got['capabilities'] == CAPABILITIES == sorted(got['capabilities'])
+    assert got['capabilities'] == sorted(set(got['capabilities']))
+    assert set(CAPABILITIES) <= set(got['capabilities'])  # plugins add theirs
     assert tuple(CAPABILITIES) == cli.CAPABILITIES
 
 
