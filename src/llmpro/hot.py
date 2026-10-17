@@ -61,8 +61,8 @@ def main(argv):
     except KeyboardInterrupt:
         return 130
     except (subprocess.CalledProcessError, OSError, ValueError) as exc:
-        print(f'agentspro: {exc}', file=sys.stderr)
+        print(f'llmpro: {exc}', file=sys.stderr)
         return 2
-    print('usage: agentspro hook pre-commit|pre-merge-commit|pre-push\n'
-          '       agentspro merge-driver manifest BASE OURS THEIRS', file=sys.stderr)
+    print('usage: llmpro hook pre-commit|pre-merge-commit|pre-push\n'
+          '       llmpro merge-driver manifest BASE OURS THEIRS', file=sys.stderr)
     return 2

@@ -16,9 +16,9 @@ A line shows the reason, the masked value (check.mask: 3 characters, length, fin
 and the first place. Values are never printed in full; --context adds 30 characters either side with the
 value as <VALUE> and any other long run replaced by its length.
 
-  agentspro check --near-miss                 # the whole store: history, memory, instructions, skills
-  agentspro check --near-miss --top 50        # only the 50 best groups (default 100, 0 = all)
-  agentspro check --near-miss --context
+  llmpro check --near-miss                 # the whole store: history, memory, instructions, skills
+  llmpro check --near-miss --top 50        # only the 50 best groups (default 100, 0 = all)
+  llmpro check --near-miss --context
 """
 import base64
 import binascii

@@ -1,7 +1,7 @@
 """Write hand-written summaries into conversation files.
 
-  agentspro summary CONV "summary text"            CONV is a file, or tool:id of a conversation in the store
-  agentspro summary --from summaries.jsonl         lines: {"id": "tool:id", "summary": "..."}
+  llmpro summary CONV "summary text"            CONV is a file, or tool:id of a conversation in the store
+  llmpro summary --from summaries.jsonl         lines: {"id": "tool:id", "summary": "..."}
 
 The history importer keeps these summaries on re-runs.
 """

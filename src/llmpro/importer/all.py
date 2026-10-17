@@ -4,7 +4,7 @@ A secret the redactor finds in one source is learned (in memory only, never writ
 removed from every file in the store: whole copies, and pieces of 8 or more characters. That needs one
 process, because a value found in a memory file may also sit in a conversation, and the other way round.
 
-Then run `agentspro check` before committing (the pre-commit hook does).
+Then run `llmpro check` before committing (the pre-commit hook does).
 """
 import hashlib
 import json

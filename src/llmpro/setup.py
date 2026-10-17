@@ -1,4 +1,4 @@
-"""`agentspro setup` and `agentspro uninstall`.
+"""`llmpro setup` and `llmpro uninstall`.
 
 setup looks at four things and changes only what is missing:
 
@@ -9,21 +9,20 @@ setup looks at four things and changes only what is missing:
 
 One preview, one y/N on a terminal. -y skips the question; without a terminal and without -y it refuses (exit 2).
 -n prints the state of each item and changes nothing: exit 1 if one is missing, 0 if all are in place.
-Every run that changes something writes an undo script to $XDG_STATE_HOME/agentspro and prints its path.
+Every run that changes something writes an undo script to $XDG_STATE_HOME/llmpro and prints its path.
 
 uninstall is the reverse, except that it never deletes the store.
 Credential and settings files are never opened: folders are moved, instruction files are read and appended to.
 """
 import datetime
-import json
 import os
 import shlex
 import shutil
 import subprocess
 import sys
 
-from . import store as cfg
-from .sync import HOOK_NAMES, MERGE_DRIVER, hook_text, hooks_dir
+from . import jsonout, store as cfg
+from .sync import HOOK_NAMES, MERGE_DRIVER, OLD_MERGE_DRIVER, hook_is_ours, hook_text, hooks_dir
 
 # tool, old path under HOME, path under STORE/sessions/
 SESSION_FOLDERS = (
@@ -96,9 +95,17 @@ def ask(question):
         return False
 
 
-def state_dir():
+OLD_STATE_DIR_NAME = 'agentspro'
+
+
+def state_dirs():
+    """-> [the state folder, the one this tool used under its old name]; look in both for earlier undo scripts."""
     base = os.environ.get('XDG_STATE_HOME') or os.path.join(cfg.home(), '.local', 'state')
-    return os.path.join(base, 'agentspro')
+    return [os.path.join(base, 'llmpro'), os.path.join(base, OLD_STATE_DIR_NAME)]
+
+
+def state_dir():
+    return state_dirs()[0]
 
 
 class Undo:
@@ -128,7 +135,7 @@ class Undo:
         while os.path.exists(path):
             n += 1
             path = os.path.join(d, f'{kind}-undo-{stamp}-{n}.sh')
-        body = ['#!/bin/sh', f'# Undo agentspro {kind} of {stamp}. Close the assistants first if it moves session folders.']
+        body = ['#!/bin/sh', f'# Undo llmpro {kind} of {stamp}. Close the assistants first if it moves session folders.']
         body += list(reversed(self.lines))
         with open(path, 'w', encoding='utf-8') as fh:
             fh.write('\n'.join(body) + '\n')
@@ -226,9 +233,9 @@ def git_settings_missing(store):
             have = open(os.path.join(hd, name), encoding='utf-8').read()
         except OSError:
             have = None
-        if have != hook_text(name):
+        if not hook_is_ours(name, have):
             missing.append(f'hook {name}')
-    if config_get(store, 'merge.manifest.driver') != MERGE_DRIVER:
+    if config_get(store, 'merge.manifest.driver') not in (MERGE_DRIVER, OLD_MERGE_DRIVER):
         missing.append('merge.manifest.driver')
     if config_get(store, 'merge.ours.driver') != 'true':
         missing.append('merge.ours.driver')
@@ -264,7 +271,7 @@ def apply_settings(store, undo):
             mode = os.stat(path).st_mode & 0o777
         except OSError:
             old, mode = None, 0o755
-        if old == hook_text(name):
+        if hook_is_ours(name, old):
             continue
         if old is None:
             undo.run('rm', '-f', path)
@@ -273,7 +280,8 @@ def apply_settings(store, undo):
     for key in ('merge.manifest.driver', 'merge.ours.driver', 'core.hooksPath'):
         old = config_get(store, key)
         want = {'merge.manifest.driver': MERGE_DRIVER, 'merge.ours.driver': 'true'}.get(key)
-        if old == want or (key == 'core.hooksPath' and not hooks_path_is_old(old)):
+        if old == want or (key == 'merge.manifest.driver' and old == OLD_MERGE_DRIVER) \
+                or (key == 'core.hooksPath' and not hooks_path_is_old(old)):
             continue
         if old is None:
             undo.run('git', '-C', store, 'config', '--local', '--unset', key)
@@ -428,7 +436,7 @@ def consent(command, yes):
     if yes:
         return True
     if not interactive():
-        raise SetupError(f'agentspro {command} needs an answer and there is no terminal: '
+        raise SetupError(f'llmpro {command} needs an answer and there is no terminal: '
                          f'use -y to apply, or -n to see what would change')
     return ask('Apply these changes?')
 
@@ -447,19 +455,19 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False)
         missing = [i for i in items if i.missing]
         if dry_run:
             if as_json:
-                print(json.dumps({'items': [{'name': i.name, 'present': not i.missing, 'details': i.details} for i in items],
-                                  'missing': [i.name for i in missing]}))
+                jsonout.emit('setup', {'items': [{'name': i.name, 'present': not i.missing, 'details': i.details} for i in items],
+                                       'missing': [i.name for i in missing]}, ok=not missing)
             else:
                 print('\n'.join(render(items)))
             return 1 if missing else 0
         if not missing:
-            print('agentspro setup: everything is in place')
+            print('llmpro setup: everything is in place')
             return 0
         if items[0].todo and items[0].todo[0].startswith('cannot use'):
             raise SetupError(items[0].details[0])
         if hub and store_state(store) == 'present':
-            print(f'agentspro setup: the store {tilde(store)} already exists; --hub is ignored', file=sys.stderr)
-        print('agentspro setup would:', file=sys.stderr)
+            print(f'llmpro setup: the store {tilde(store)} already exists; --hub is ignored', file=sys.stderr)
+        print('llmpro setup would:', file=sys.stderr)
         for it in missing:
             for line in it.todo:
                 print(f'  [{it.name}] {line}', file=sys.stderr)
@@ -482,10 +490,10 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False)
                 apply_pointers(store, undo)
         finally:
             finish(undo, 'setup')
-        print('agentspro setup: done', file=sys.stderr)
+        print('llmpro setup: done', file=sys.stderr)
         return 0
     except SetupError as exc:
-        print(f'agentspro setup: {exc}', file=sys.stderr)
+        print(f'llmpro setup: {exc}', file=sys.stderr)
         return 2
 
 
@@ -505,13 +513,14 @@ def plan_uninstall(store):
         for name in HOOK_NAMES:
             path = os.path.join(hd, name)
             try:
-                if open(path, encoding='utf-8').read() == hook_text(name):
+                if hook_is_ours(name, open(path, encoding='utf-8').read()):
                     hooks.append(path)
             except OSError:
                 pass
-        for key, want in (('merge.manifest.driver', MERGE_DRIVER), ('merge.ours.driver', 'true')):
-            if config_get(store, key) == want:
-                configs.append((key, want))
+        for key, wants in (('merge.manifest.driver', (MERGE_DRIVER, OLD_MERGE_DRIVER)), ('merge.ours.driver', ('true',))):
+            have = config_get(store, key)
+            if have in wants:
+                configs.append((key, have))
     pointers = []
     wanted = pointer_lines(store)
     for tool, folder, name, kind in POINTER_FILES:
@@ -532,17 +541,17 @@ def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
         todo = ([f'move {tilde(dst)} back to {tilde(src)} and remove the symlink' for src, dst in sessions]
                 + [f'remove the hook {tilde(h)}' for h in hooks]
                 + [f'unset git config {k} in the store' for k, _ in configs]
-                + [f'remove the agentspro line from {tilde(p)}' for p in pointers])
+                + [f'remove the llmpro line from {tilde(p)}' for p in pointers])
         if dry_run:
             if as_json:
-                print(json.dumps({'todo': todo}))
+                jsonout.emit('uninstall', {'todo': todo}, ok=not todo)
             else:
-                print('\n'.join(todo) if todo else 'nothing of agentspro is set up on this machine')
+                print('\n'.join(todo) if todo else 'nothing of llmpro is set up on this machine')
             return 1 if todo else 0
         if not todo:
-            print('agentspro uninstall: nothing to remove')
+            print('llmpro uninstall: nothing to remove')
             return 0
-        print('agentspro uninstall would (the store is kept):', file=sys.stderr)
+        print('llmpro uninstall would (the store is kept):', file=sys.stderr)
         for line in todo:
             print(f'  {line}', file=sys.stderr)
         if sessions:
@@ -584,8 +593,8 @@ def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
                     undo.raw(f'cp -p {shlex.quote(copy)} {shlex.quote(path)}')
         finally:
             finish(undo, 'uninstall')
-        print('agentspro uninstall: done; the store is kept', file=sys.stderr)
+        print('llmpro uninstall: done; the store is kept', file=sys.stderr)
         return 0
     except SetupError as exc:
-        print(f'agentspro uninstall: {exc}', file=sys.stderr)
+        print(f'llmpro uninstall: {exc}', file=sys.stderr)
         return 2

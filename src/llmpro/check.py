@@ -11,10 +11,10 @@ values (see part2_cached). Output shows first 3 characters, length and a sha256 
 A false positive goes in the store's .agentspro/allowlist.json: {"<first 16 hex of sha256>": "reason"}.
 The fingerprint is of the value (part 1), of the source secret, or of the 8-character piece (part 2).
 
-  agentspro check             # part 1 on every file in the working tree, part 2 on the whole store
-  agentspro check --staged    # pre-commit: part 1 on staged files, part 2 on the whole store
-  agentspro check --history   # also every blob in the store's git history
-  agentspro check --no-cache  # collect every raw source again (slow), as a cross-check
+  llmpro check             # part 1 on every file in the working tree, part 2 on the whole store
+  llmpro check --staged    # pre-commit: part 1 on staged files, part 2 on the whole store
+  llmpro check --history   # also every blob in the store's git history
+  llmpro check --no-cache  # collect every raw source again (slow), as a cross-check
 Exit status 1 if anything is found that is not allowlisted.
 """
 import argparse
@@ -868,7 +868,7 @@ def run(store, all=False, staged=False, history=False, jobs=None, part=None, con
         print('FAILED: fix the redactor or allowlist a false positive by fingerprint, with a reason')
         return 1
     if nh:
-        print('FAILED: store health (agentspro check --fix rebuilds INDEX.md; the rest is for you)')
+        print('FAILED: store health (llmpro check --fix rebuilds INDEX.md; the rest is for you)')
         return 1
     print('passed')
     return 0

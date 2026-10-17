@@ -1,6 +1,12 @@
-"""The `agentspro` command. Exit codes: 0 done, 1 a check or step failed, 2 usage or other error, 130
+"""The `llmpro` command. Exit codes: 0 done, 1 a check or step failed, 2 usage or other error, 130
 interrupted. Results go to stdout, progress to stderr."""
 import sys
+
+# What this build can do, sorted. `llmpro --version --json` lists it; later packages add to it.
+CAPABILITIES = ('check', 'check.json', 'find', 'find.json', 'mcp', 'setup', 'setup.dry-run', 'summary', 'sync',
+                'sync.dry-run', 'uninstall', 'version.json')
+
+RENAME_NOTE = 'agentspro is now llmpro; this name keeps working for now'
 
 
 def build_parser():
@@ -10,10 +16,10 @@ def build_parser():
                         help='the store folder (default: $AGENTS_STORE, then ~/.agents)')
     common.add_argument('-q', '--quiet', action='store_true', default=argparse.SUPPRESS, help='no progress lines')
     common.add_argument('-v', '--verbose', action='store_true', default=argparse.SUPPRESS, help='more detail')
-    p = argparse.ArgumentParser(prog='agentspro', parents=[common],
+    p = argparse.ArgumentParser(prog='llmpro', parents=[common],
                                 description='Keep AI assistant chats, memories and instructions in one git repo.')
     from . import __version__
-    p.add_argument('--version', action='version', version=f'agentspro {__version__}')
+    p.add_argument('--version', action='version', version=f'llmpro {__version__}')
     sub = p.add_subparsers(dest='cmd', metavar='COMMAND')
 
     s = sub.add_parser('sync', parents=[common], help='import, commit, and exchange commits with the hub')
@@ -28,7 +34,7 @@ def build_parser():
     t.add_argument('--hub', metavar='URL', help='clone the store from this hub when there is none')
     t.add_argument('--json', action='store_true', help='with -n: result as JSON')
 
-    u = sub.add_parser('uninstall', parents=[common], help='take agentspro off this machine (the store is kept)')
+    u = sub.add_parser('uninstall', parents=[common], help='take llmpro off this machine (the store is kept)')
     u.add_argument('-n', '--dry-run', action='store_true', help='show what would be removed')
     u.add_argument('-y', '--yes', action='store_true', help='do not ask')
     u.add_argument('--json', action='store_true', help='with -n: result as JSON')
@@ -69,8 +75,7 @@ def build_parser():
 def do_check(args, store):
     import contextlib
     import io
-    import json
-    from . import check
+    from . import check, jsonout
     if args.near_miss:
         if args.staged or args.history or args.fix:
             print('--near-miss cannot be combined with --staged, --history or --fix', file=sys.stderr)
@@ -80,7 +85,7 @@ def do_check(args, store):
         with contextlib.redirect_stdout(buf) if args.json else contextlib.nullcontext():
             nearmiss.run(store, top=args.top, context=args.context, jobs=args.jobs)
         if args.json:
-            print(json.dumps({'passed': True, 'exit': 0, 'output': buf.getvalue().splitlines()}))
+            jsonout.emit('check', {'passed': True, 'exit': 0, 'output': buf.getvalue().splitlines()})
         return 0
     buf = io.StringIO()
     capture = args.json or getattr(args, 'quiet', False)
@@ -91,13 +96,22 @@ def do_check(args, store):
     text = buf.getvalue()
     if args.json:
         lines = text.splitlines()
-        print(json.dumps({'passed': code == 0, 'exit': code, 'output': lines}))
+        jsonout.emit('check', {'passed': code == 0, 'exit': code, 'output': lines}, ok=code == 0)
     elif capture and code != 0:
         sys.stdout.write(text)
     return code
 
 
+def version_json():
+    from . import jsonout, __version__
+    jsonout.emit('version', {'version': __version__, 'python': sys.version.split()[0],
+                             'capabilities': sorted(CAPABILITIES)})
+    return 0
+
+
 def run(argv):
+    if '--version' in argv and '--json' in argv:
+        return version_json()
     args = build_parser().parse_args(argv)
     if not args.cmd:
         build_parser().print_usage(sys.stderr)
@@ -131,7 +145,7 @@ def run(argv):
         return mcp.serve(store)
     if args.cmd == 'summary':
         if not args.from_file and not (args.conv and args.text):
-            print('usage: agentspro summary CONV TEXT | agentspro summary --from FILE.jsonl', file=sys.stderr)
+            print('usage: llmpro summary CONV TEXT | llmpro summary --from FILE.jsonl', file=sys.stderr)
             return 2
         cfg.configure(store, required=False)
         from . import summary
@@ -153,6 +167,16 @@ def main(argv=None):
             return exc.code or 0
         print(exc.code, file=sys.stderr)
         return 2
+
+
+def alias_main(argv=None):
+    """The `agentspro` command: the same as `llmpro`, with one line on stderr saying the name changed. Hooks
+    and the merge driver run under the old name in stores set up before the rename, and stay silent."""
+    import os
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if not (argv and argv[0] in ('hook', 'merge-driver')) and os.environ.get('LLMPRO_NO_RENAME_NOTE') != '1':
+        print(RENAME_NOTE, file=sys.stderr)
+    return main(argv)
 
 
 if __name__ == '__main__':

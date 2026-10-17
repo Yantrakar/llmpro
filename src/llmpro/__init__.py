@@ -1,4 +1,4 @@
-"""agentspro: turn every AI assistant's chats, memories and instructions on a machine into one plain-text
+"""llmpro: turn every AI assistant's chats, memories and instructions on a machine into one plain-text
 store, keep secrets out of it, and keep it in step across machines."""
 
 __version__ = "0.1.0"
