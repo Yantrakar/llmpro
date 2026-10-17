@@ -14,6 +14,8 @@ This folder is the assistant context store, kept as plain files so any assistant
 - instructions/<machine>/<tool>/ holds copies of instruction files at their original paths, with the home folder as HOME/. The live original is at the source_path that manifest.jsonl gives.
 - skills/<name>/SKILL.md: every skill, and the only copy of each. Edit them here. A skill copied anywhere else is garbage: remove it rather than keep it in step. Tools that read skills from a folder of their own should link it to the store's skills/.
 
+- When gitpro is installed, the `git_*` tools of the llmpro MCP server and `llmpro git ...` tell which git name, email and key a repo uses. Ask before you commit or push.
+
 ## Adding or changing a memory
 
 Add a memory when you learn something that should outlast this session: a preference or correction from the user, a project decision, or a pointer to an outside resource.
@@ -38,7 +40,7 @@ Never add a git remote and never push. The one remote, hub, is pushed only by `l
 
 sessions/<tool>/ holds each tool's own session files. The tools' own folders link here, so they write as before. These files are unredacted and can hold secrets: git ignores sessions/, `llmpro check` fails if git ever sees a file there, and they never leave this machine. Never run `git clean -X` here: it deletes them. history/ is their redacted, readable form.
 
-Chats from a local-only project (`[privacy] local_only` in config.toml) are imported into local/history/ instead, with their rows in local/manifest.jsonl. git ignores local/, `llmpro check` fails if git ever sees a file there, and they never reach the hub. To make another project local-only, add its folder there and move its existing chats into local/ by hand.
+Chats from a local-only project (`[privacy] local_only` in config.toml) are imported into local/history/ instead, with their rows in local/manifest.jsonl. git ignores local/, `llmpro check` fails if git ever sees a file there, and they never reach the hub. To make another project local-only, add its folder there and move its existing chats into local/ by hand. Chats of the git identities in `[privacy] local_identities` stay in local/ as well.
 
 config.toml holds the settings meant to be changed (local-only projects, extra tool folders to read). Edit it rather than the code, then run `llmpro check`.
 

@@ -19,6 +19,9 @@ def smoke(wheel):
             archive.extractall(package)
         for template in ('AGENTS.md', 'FORMAT.md', 'config.toml'):
             assert f'llmpro/templates/{template}' in names, f'{template} is missing from the wheel'
+        assert 'llmpro/skills/llmpro/SKILL.md' in names, 'the skill is missing from the wheel'
+        for name in ('memory', 'secrets', 'git'):
+            assert f'llmpro/skills/llmpro/references/{name}.md' in names, f'reference {name} is missing from the wheel'
         env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_') and k != 'AGENTS_STORE'}
         env.update(HOME=str(home), PYTHONPATH=str(package))
 
@@ -49,6 +52,15 @@ def smoke(wheel):
         replies = [json.loads(line) for line in result.stdout.splitlines()]
         assert replies[0]['result']['serverInfo'] == {'name': 'llmpro', 'version': version}, replies[0]
         assert {t['name'] for t in replies[1]['result']['tools']}, replies[1]
+
+        # the skill setup item reads the copy inside the wheel (no outside program is found: empty tool path)
+        empty = root / 'no-tools'
+        empty.mkdir()
+        env['LLMPRO_TOOL_PATH'] = str(empty)
+        result = run('--store', str(store), 'setup', '-y', '--only', 'memory')
+        assert result.returncode == 0, result
+        installed = store / 'skills' / 'llmpro' / 'SKILL.md'
+        assert installed.is_file() and 'installed by llmpro setup' in installed.read_text(), result
 
 
 if __name__ == '__main__':

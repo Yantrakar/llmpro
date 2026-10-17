@@ -1,0 +1,11 @@
+{
+  "name": "llmpro",
+  "owner": {"name": "Yantrakar"},
+  "plugins": [
+    {
+      "name": "llmpro",
+      "source": "./",
+      "description": "One store for your assistants' chats, memories and skills, kept free of secrets, with git identity checks."
+    }
+  ]
+}

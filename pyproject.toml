@@ -29,6 +29,9 @@ path = "src/llmpro/__init__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/llmpro"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"skills/llmpro" = "llmpro/skills/llmpro"
+
 [tool.hatch.build.targets.sdist]
 exclude = ["names", ".github"]
 
