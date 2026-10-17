@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import sys
 
 from . import tools
@@ -27,10 +28,14 @@ OPENCODE_FILES = ('opencode.json', 'opencode.jsonc')
 
 def run_tool(cmd, timeout=None):
     """Run an outside command with no input, its output captured. -> (exit code, last line of stderr).
-    The exit code is None when it timed out or could not be started, and the line says why."""
+    The exit code is None when it timed out or could not be started, and the line says why.
+
+    It runs in an empty folder: `claude mcp get` also counts a server from the current folder's .mcp.json,
+    so from inside a repo that ships one it would say llmpro is registered when it is not, for the user."""
     try:
-        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                           timeout=timeout or TIMEOUT)
+        with tempfile.TemporaryDirectory(prefix='llmpro-') as empty:
+            r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                               timeout=timeout or TIMEOUT, cwd=empty)
     except subprocess.TimeoutExpired:
         return None, f'{os.path.basename(cmd[0])} timed out after {timeout or TIMEOUT:g} s'
     except OSError as exc:

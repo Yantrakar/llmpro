@@ -45,7 +45,7 @@ with open(os.path.join(here, {name!r} + '.log'), 'a') as fh:
     fh.write(json.dumps(argv) + chr(10))
 if argv[:2] == ['mcp', 'get']:
     time.sleep(state['sleep'])
-    if argv[2] in state['registered']:
+    if argv[2] in state['registered'] or os.path.exists('.mcp.json'):  # like claude: a project's server counts
         print('found')
         sys.exit(0)
     print('No MCP server found', file=sys.stderr)
@@ -184,6 +184,22 @@ def test_assistant_not_registered_is_added_with_an_undo(tool, item, add, undo_li
     assert items(machine, capsys, '--only', 'memory')[1][item]['present']
     assert run(['--store', store, 'setup', '-y', '--only', 'memory'], capsys)[0] == 0
     assert mcp_changes(tools_dir, tool) == [add]  # not added twice
+
+
+@pytest.mark.parametrize('tool, item, add, undo_line', CASES)
+def test_a_projects_mcp_json_does_not_count_as_registered(tool, item, add, undo_line, machine, store, tools_dir,
+                                                          capsys, monkeypatch, tmp_path):
+    # Setup run from inside a repo that ships a .mcp.json (llmpro's own, for one) must still register llmpro
+    # for the user.
+    project = tmp_path / 'project'
+    project.mkdir()
+    (project / '.mcp.json').write_text('{"mcpServers": {"llmpro": {"command": "llmpro", "args": ["mcp"]}}}')
+    monkeypatch.chdir(project)
+    fake_tool(tools_dir, tool)
+    code, got, _ = items(machine, capsys, '--only', 'memory')
+    assert not got[item]['present']
+    assert run(['--store', store, 'setup', '-y', '--only', 'memory'], capsys)[0] == 0
+    assert mcp_changes(tools_dir, tool) == [add]
 
 
 @pytest.mark.parametrize('tool, item, add, undo_line', CASES)
