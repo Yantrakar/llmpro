@@ -211,6 +211,28 @@ def test_hook_survives_a_gitpro_that_cannot_run(hook, fake_gitpro):
     assert (r.returncode, r.stdout) == (0, '')
 
 
+def test_hook_asks_again_after_a_version_that_did_not_answer(hook, fake_gitpro):
+    fake_gitpro.answer(ARGV, REPLY)
+    fake_gitpro.version_raw('not json')
+    r, _ = hook()
+    assert (r.returncode, r.stdout) == (0, '')
+    fake_gitpro.version()  # the program file is the same; only its answer changed
+    r, _ = hook()
+    assert r.stdout.strip() == REPLY
+    assert len(versions(fake_gitpro)) == 2
+
+
+def test_hook_passes_gitpros_stderr(hook, fake_gitpro):
+    body = ('#!%s\nimport sys, json\n'
+            'if sys.argv[1:] == ["--version", "--json"]:\n'
+            '    print(json.dumps({"ok": True, "version": "0.4.0", "capabilities": ["agent-check"]}))\n'
+            'else:\n'
+            '    print("{}"); print("gitpro: why", file=sys.stderr)\n') % sys.executable
+    Path(fake_gitpro.path).write_text(body)
+    r, _ = hook()
+    assert (r.returncode, r.stdout.strip(), r.stderr.strip()) == (0, '{}', 'gitpro: why')
+
+
 def test_hook_gives_up_on_a_slow_gitpro(hook, fake_gitpro):
     fake_gitpro.answer(ARGV, REPLY, sleep=20)
     start = time.time()

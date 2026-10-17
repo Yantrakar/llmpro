@@ -32,7 +32,7 @@ def fingerprint(path):
 
 
 def read_capabilities(path, env):
-    """-> the capabilities of the gitpro at `path` (empty when it is too old or does not answer)."""
+    """-> the capabilities of the gitpro at `path` (empty when it is too old), or None when it does not answer."""
     try:
         r = subprocess.run([path, '--version', '--json'], stdin=subprocess.DEVNULL, capture_output=True, text=True,
                            timeout=TIMEOUT, env=env)
@@ -41,7 +41,7 @@ def read_capabilities(path, env):
             return []
         return [str(c) for c in data['capabilities']]
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
-        return []
+        return None
 
 
 def capabilities(path, env):
@@ -56,6 +56,8 @@ def capabilities(path, env):
     except (OSError, ValueError):
         pass
     caps = read_capabilities(path, env)
+    if caps is None:
+        return []  # not kept, so a gitpro that was slow once is asked again next time
     try:
         os.makedirs(os.path.dirname(cache_path()), mode=0o700, exist_ok=True)
         tmp = cache_path() + f'.{os.getpid()}'
@@ -81,6 +83,8 @@ def run(stdin=None):
                            timeout=TIMEOUT, env=env)
         sys.stdout.buffer.write(r.stdout)
         sys.stdout.buffer.flush()
+        sys.stderr.buffer.write(r.stderr)
+        sys.stderr.buffer.flush()
         return r.returncode if r.returncode >= 0 else 0
     except Exception:
         return 0
