@@ -8,7 +8,13 @@ import json
 import subprocess
 import sys
 
-PROTOCOL = '2025-06-18'
+from .mcp_proxy import PROTOCOL_VERSIONS, Proxy
+
+INSTRUCTIONS = ('llmpro offers tools to search past chats and memories in the store, to check the store for '
+                'secrets, to see what a sync would do, and, when gitpro is installed, the git identity tools '
+                'with the prefix git_. Every tool is read-only. When something needs changing, the tool says '
+                'which command to run, and the person runs it.')
+OWN = ('find', 'check', 'sync_status')
 READ_ONLY = {'readOnlyHint': True}
 
 TOOLS = [
@@ -78,11 +84,23 @@ def call(store, name, args):
     return {'content': [{'type': 'text', 'text': text}], 'isError': True}
 
 
-def handle(store, msg):
+def instructions(proxy):
+    return ' '.join([INSTRUCTIONS] + proxy.missing)
+
+
+def handle(store, msg, proxy=None):
     """-> the response dict for a request, or None for a notification."""
+    if proxy is None:
+        proxy = Proxy(store)
+        try:
+            return handle(store, msg, proxy)
+        finally:
+            proxy.close()
     mid = msg.get('id')
     method = msg.get('method')
     if mid is None:
+        if method == 'notifications/cancelled' and isinstance(msg.get('params'), dict):
+            proxy.cancel(msg['params'])
         return None  # notifications (initialized, cancelled) need no answer
 
     def reply(result):
@@ -91,42 +109,58 @@ def handle(store, msg):
     def error(code, text):
         return {'jsonrpc': '2.0', 'id': mid, 'error': {'code': code, 'message': text}}
 
+    params = msg.get('params')
+    params = params if isinstance(params, dict) else {}
     if method == 'initialize':
         from . import __version__
-        return reply({'protocolVersion': PROTOCOL, 'capabilities': {'tools': {'listChanged': False}},
-                      'serverInfo': {'name': 'llmpro', 'version': __version__}})
+        asked = params.get('protocolVersion')
+        version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[-1]
+        proxy.set_protocol(version)
+        return reply({'protocolVersion': version, 'capabilities': {'tools': {'listChanged': False}},
+                      'serverInfo': {'name': 'llmpro', 'version': __version__},
+                      'instructions': instructions(proxy)})
     if method == 'ping':
         return reply({})
+    if method == 'resources/list':
+        return reply({'resources': []})
+    if method == 'prompts/list':
+        return reply({'prompts': []})
     if method == 'tools/list':
-        return reply({'tools': TOOLS})
+        return reply({'tools': TOOLS + proxy.list_tools(OWN)})
     if method == 'tools/call':
-        params = msg.get('params') or {}
-        if not isinstance(params, dict) or not isinstance(params.get('arguments') or {}, dict):
+        if not isinstance(params.get('arguments') or {}, dict):
             return error(-32602, 'invalid params')
+        name = params.get('name')
         try:
-            return reply(call(store, params.get('name'), params.get('arguments')))
+            if isinstance(name, str) and name not in OWN and proxy.owns(name):
+                return reply(proxy.call(OWN, name, params.get('arguments') or {}))
+            return reply(call(store, name, params.get('arguments')))
         except KeyError:
-            return error(-32602, f"unknown tool: {params.get('name')}")
+            return error(-32602, f'unknown tool: {name}')
     return error(-32601, f'method not found: {method}')
 
 
 def serve(store, stdin=None, stdout=None):
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    for line in stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except ValueError:
-            resp = {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32700, 'message': 'parse error'}}
-        else:
-            if not isinstance(msg, dict):
-                resp = {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32600, 'message': 'invalid request'}}
+    proxy = Proxy(store)
+    try:
+        for line in stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                resp = {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32700, 'message': 'parse error'}}
             else:
-                resp = handle(store, msg)
-        if resp is not None:
-            stdout.write(json.dumps(resp, ensure_ascii=False) + '\n')
-            stdout.flush()
+                if not isinstance(msg, dict):
+                    resp = {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32600, 'message': 'invalid request'}}
+                else:
+                    resp = handle(store, msg, proxy)
+            if resp is not None:
+                stdout.write(json.dumps(resp, ensure_ascii=False) + '\n')
+                stdout.flush()
+    finally:
+        proxy.close()
     return 0
