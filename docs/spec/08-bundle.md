@@ -105,8 +105,9 @@ From 03 to 07: `gitpro.get()`, `tools.which`, `plugins.base.SetupItem`, `setup.I
   description is at most 1024 characters, the body under 150 lines; each reference the body links exists.
 - `plugin.json`, `marketplace.json`, `.mcp.json`, `hooks.json` parse; versions match; the hook command
   is exactly the one above.
-- `llmpro hook agent-check` with no gitpro: no output, exit 0, and `llmpro.plugins` and `argparse` are not
-  in `sys.modules` (run it in a child Python and print `sys.modules` keys at exit, or check with `-X
+- `llmpro hook agent-check` with no gitpro: no output, exit 0, and `argparse`, `importlib.metadata` and
+  the built-in plugin modules (`llmpro.plugins.memory`, `.secrets`, `.git`) are not in `sys.modules`
+  (`llmpro.gitpro` imports `llmpro.plugins.base`, which is fine) (run it in a child Python and print `sys.modules` keys at exit, or check with `-X
   importtime`).
 - With the fake gitpro listing `agent-check` and answering `['agent-check', '--agent', 'claude']` with a
   JSON reply and exit 0: the reply is passed through, and the fake saw the same stdin. A second run does
