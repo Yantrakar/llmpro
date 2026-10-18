@@ -26,6 +26,7 @@ import multiprocessing
 import os
 import re
 import sqlite3
+import string
 import subprocess
 
 from . import REDACT_VERSION, __version__
@@ -125,6 +126,7 @@ def is_hash(text, start, v):
 
 MARKER = re.compile(r'\[REDACTED:[a-z\-]*\]?')
 FINGERPRINT_BEFORE = re.compile(r'(?i)(?:sha(?:1|256|384|512)|md5):$')  # ssh-keygen fingerprints are public
+B64 = string.ascii_letters + string.digits + '+/'  # RUN16 stops at + and /, which base64 has
 
 
 def code_name(v):
@@ -152,11 +154,22 @@ def scan_patterns(text):
         s = m.start()
         if any(a <= s < b for a, b in taken):
             continue
+        # A run can be one part of a base64 token (a fingerprint, a signature): judge it by the whole token.
+        # Deep in one, "key" or "auth" in its own random letters is no keyword (Claude's thinking signatures).
+        w = text[max(0, s - 400):s]
+        blob = s - len(w) + len(w.rstrip(B64))  # where the token this run is part of starts
+        if s - blob < 40:
+            end = s  # at most a short prefix (a path, a fingerprint): as for any run
+        elif blob == s - 400:
+            end = 0  # the token runs past the window: no word before it is within reach
+        else:
+            end = blob
         # "[REDACTED:password]" is no keyword; mask before trimming, so a marker cut in half is masked too
-        before = MARKER.sub(lambda r: ' ' * len(r.group(0)), text[max(0, s - 110):s])[-46:]
+        before = MARKER.sub(lambda r: ' ' * len(r.group(0)), text[max(0, end - 110):end])[-46:]
         v = m.group(0)
         if (any(k.end() >= len(before) - 40 for k in KEYWORD.finditer(before)) and looks_random(v)
-                and not is_hash(text, s, v) and not code_name(v) and not FINGERPRINT_BEFORE.search(before)):
+                and not is_hash(text, s, v) and not code_name(v) and not FINGERPRINT_BEFORE.search(before)
+                and not FINGERPRINT_BEFORE.search(text[max(0, blob - 8):blob])):
             hits.append(('near-keyword', m.group(0), s))
     return hits
 
@@ -550,7 +563,10 @@ def print_leaks(rows, show_context):
 # without the key the cache cannot be brute-forced. Both live in .git/agentspro/, which is never pushed.
 # A .jsonl source that only grew is read from where the last run stopped. A hit is resolved by collecting
 # its source again, in memory, so it is printed and allowlisted exactly as without the cache.
-CACHE_VERSION = f'{__version__}+{REDACT_VERSION}'
+# Raised whenever a change to the rules here can change what is collected from a raw source, so a cache
+# collected under the old rules is dropped. Unlike REDACT_VERSION it is not recorded in the store.
+RULES_VERSION = 2  # 2: a run is judged by the whole base64 token it is part of (2026-10-18)
+CACHE_VERSION = f'{__version__}+{REDACT_VERSION}+{RULES_VERSION}'
 KEY = b''
 WHOLE, HPIECES, META = {}, {}, []  # filled in the parent before the pool forks; read by match_hashed
 CHECKED = []  # the keyed hashes of every value the last part2_cached run checked for

@@ -173,6 +173,21 @@ class SecretcheckRules(unittest.TestCase):
         text = f'auth key: toolu_01QwErTy8uIoPaSdFgHjKlZx, authorized key ssh-ed25519 {body} me@host'
         self.assertEqual(secretcheck.scan_patterns(text), [])
 
+    def test_parts_of_an_ssh_fingerprint_are_no_hits(self):
+        body = base64.b64encode(hashlib.sha256(b'host').digest()).decode().rstrip('=').replace('+', 'x').replace('/', 'y')
+        a, b = body[:14], body[15:]
+        text = f'ED25519 key fingerprint is: SHA256:{a}/{b}.'
+        self.assertEqual([h for h in secretcheck.scan_patterns(text) if h[0] == 'near-keyword'], [])
+
+    def test_a_keyword_inside_a_long_token_is_no_keyword(self):
+        part = lambda s: base64.b64encode(hashlib.sha512(s).digest()).decode().replace('+', 'x').replace('/', 'y')[:60]
+        sig = part(b'a')[:30] + 'key' + part(b'b')[:30] + '/' + part(b'c')
+        text = f'{{"type":"thinking","thinking":"","signature":"{sig}"}}'
+        self.assertEqual([h for h in secretcheck.scan_patterns(text) if h[0] == 'near-keyword'], [])
+        # a keyword before the token still counts for every part of it
+        text = f'secret = "{part(b"d")}/{part(b"c")}"'
+        self.assertEqual([h[1] for h in secretcheck.scan_patterns(text) if h[0] == 'near-keyword'], [part(b'd'), part(b'c')])
+
     def test_report_groups_hits_by_value(self):
         out = io.StringIO()
         rows = [('a.md', 1, 'whole [token] x…', ''), ('b.md', 2, 'whole [token] x…', ''), ('b.md', 3, 'whole [token] x…', '')]
