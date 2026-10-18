@@ -214,8 +214,8 @@ def plausible(v, kind=''):
         return False
     if re.fullmatch(r'[A-Z][A-Z0-9_]*', v) and (not re.search(r'\d', v) or '_' in v):
         return False  # an environment variable name or metavar
-    if re.fullmatch(r'[A-Za-z][a-z0-9]*(?:[_\-.:/][A-Za-z0-9]+)+', v) and not looks_random(re.sub('[^A-Za-z0-9]', '', v)):
-        return False  # snake_case, kebab-case, dotted.name, host.name, a:b
+    if re.fullmatch(r'[A-Za-z][a-z0-9]*(?:[_\-.:/]+[A-Za-z0-9]+)+', v) and not looks_random(re.sub('[^A-Za-z0-9]', '', v)):
+        return False  # snake_case, kebab-case, dotted.name, module._private, host.name, a:b
     if re.fullmatch(r'[a-z]+(?:[A-Z][a-z]+)+|[A-Z][a-z]+(?:[A-Z][a-z]+)*', v):
         return False  # camelCase / PascalCase identifier
     if re.fullmatch(r'\d{4}-\d\d-\d\d(?:[T ][\d:.]+)?(?:Z|[+\-]\d\d:?\d\d)?', v):
@@ -568,7 +568,8 @@ def print_leaks(rows, show_context):
 # its source again, in memory, so it is printed and allowlisted exactly as without the cache.
 # Raised whenever a change to the rules here can change what is collected from a raw source, so a cache
 # collected under the old rules is dropped. Unlike REDACT_VERSION it is not recorded in the store.
-RULES_VERSION = 3  # 2: a run is judged by the whole base64 token it is part of; 3: PGP public key blocks (2026-10-18)
+RULES_VERSION = 4  # 2: a run is judged by the whole base64 token it is part of; 3: PGP public key blocks;
+# 4: module._private names (2026-10-18)
 CACHE_VERSION = f'{__version__}+{REDACT_VERSION}+{RULES_VERSION}'
 KEY = b''
 WHOLE, HPIECES, META = {}, {}, []  # filled in the parent before the pool forks; read by match_hashed
