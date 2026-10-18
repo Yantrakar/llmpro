@@ -126,6 +126,9 @@ def is_hash(text, start, v):
 
 MARKER = re.compile(r'\[REDACTED:[a-z\-]*\]?')
 FINGERPRINT_BEFORE = re.compile(r'(?i)(?:sha(?:1|256|384|512)|md5):$')  # ssh-keygen fingerprints are public
+# Armored public keys, as in apt's Signed-By. Unlike the redactor's, the block needs its END line: a stray
+# BEGIN line must not hide the rest of a file from the check.
+PUBLIC_BLOCK = re.compile(r'-----BEGIN PGP PUBLIC KEY BLOCK-----.{0,65536}?-----END PGP PUBLIC KEY BLOCK-----', re.S)
 B64 = string.ascii_letters + string.digits + '+/'  # RUN16 stops at + and /, which base64 has
 
 
@@ -149,7 +152,7 @@ def scan_patterns(text):
             taken.append((m.start(), m.end()))
     for m in KEY_HEADER.finditer(text):
         hits.append(('private-key', m.group(0), m.start()))
-    taken += [(m.start(), m.end()) for m in PUBLIC.finditer(text)]
+    taken += [(m.start(), m.end()) for rx in (PUBLIC, PUBLIC_BLOCK) for m in rx.finditer(text)]
     for m in RUN16.finditer(text):
         s = m.start()
         if any(a <= s < b for a, b in taken):
@@ -565,7 +568,7 @@ def print_leaks(rows, show_context):
 # its source again, in memory, so it is printed and allowlisted exactly as without the cache.
 # Raised whenever a change to the rules here can change what is collected from a raw source, so a cache
 # collected under the old rules is dropped. Unlike REDACT_VERSION it is not recorded in the store.
-RULES_VERSION = 2  # 2: a run is judged by the whole base64 token it is part of (2026-10-18)
+RULES_VERSION = 3  # 2: a run is judged by the whole base64 token it is part of; 3: PGP public key blocks (2026-10-18)
 CACHE_VERSION = f'{__version__}+{REDACT_VERSION}+{RULES_VERSION}'
 KEY = b''
 WHOLE, HPIECES, META = {}, {}, []  # filled in the parent before the pool forks; read by match_hashed

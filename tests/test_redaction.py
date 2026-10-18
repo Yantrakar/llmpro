@@ -188,6 +188,16 @@ class SecretcheckRules(unittest.TestCase):
         text = f'secret = "{part(b"d")}/{part(b"c")}"'
         self.assertEqual([h[1] for h in secretcheck.scan_patterns(text) if h[0] == 'near-keyword'], [part(b'd'), part(b'c')])
 
+    def test_a_pgp_public_key_block_is_no_hit(self):
+        lines = [base64.b64encode(hashlib.sha512(bytes([i])).digest()).decode()[:64] for i in range(4)]
+        block = '\n      '.join(['-----BEGIN PGP PUBLIC KEY BLOCK-----', '.', *lines, '-----END PGP PUBLIC KEY BLOCK-----'])
+        text = f'Types: deb\nSigned-By:\n      {block}\n'
+        self.assertEqual([h for h in secretcheck.scan_patterns(text) if h[0] == 'near-keyword'], [])
+        # without its END line the block hides nothing
+        v = base64.b64encode(hashlib.sha256(b'v').digest()).decode().replace('+', 'x').replace('/', 'y')[:24]
+        text = f'-----BEGIN PGP PUBLIC KEY BLOCK-----\nsecret = {v}\n'
+        self.assertEqual([h[1] for h in secretcheck.scan_patterns(text) if h[0] == 'near-keyword'], [v])
+
     def test_report_groups_hits_by_value(self):
         out = io.StringIO()
         rows = [('a.md', 1, 'whole [token] x…', ''), ('b.md', 2, 'whole [token] x…', ''), ('b.md', 3, 'whole [token] x…', '')]
