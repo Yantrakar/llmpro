@@ -172,6 +172,24 @@ def test_session_folder_with_existing_target_is_left_alone(machine, capsys, onpa
     assert run(['setup', '-n', '--store', store], capsys)[0] == 0
 
 
+def test_session_folder_is_not_moved_into_another_tools_linked_folder(machine, capsys, onpath, store):
+    # an older layout: copilot cli's folder links to sessions/copilot, where VS Code's would go
+    os.makedirs(os.path.join(store, 'sessions/copilot'))
+    os.rename(machine / '.copilot/session-state', os.path.join(store, 'sessions/copilot/a'))
+    os.rmdir(machine / '.copilot')
+    os.makedirs(machine / '.copilot')
+    os.symlink(os.path.join(store, 'sessions/copilot'), machine / '.copilot/session-state')
+    (machine / '.config/Code/User/workspaceStorage/w1').mkdir(parents=True)
+    code, out, err = run(['setup', '-n', '--store', store], capsys)
+    assert 'would be inside the folder ~/.copilot/session-state links to' in out
+    code, out, err = run(['setup', '-y', '--store', store], capsys)
+    assert code == 0
+    assert not (machine / '.config/Code/User/workspaceStorage').is_symlink()
+    assert (machine / '.config/Code/User/workspaceStorage/w1').is_dir()
+    assert sorted(os.listdir(os.path.join(store, 'sessions/copilot'))) == ['a']
+    assert (machine / '.claude/projects').is_symlink()
+
+
 def test_refuses_to_move_logs_into_a_store_that_does_not_ignore_them(machine, capsys, onpath, store):
     open(os.path.join(store, '.gitignore'), 'w').write('*.pyc\n')
     before = snapshot(machine)

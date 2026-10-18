@@ -294,7 +294,8 @@ def apply_settings(store, undo):
 # ---------------------------------------------------------------- 3. session folders
 
 def session_status(store, tool, old_rel, new_rel):
-    """-> (state, src, dst). state: linked, foreign (a symlink to somewhere else), absent, todo, conflict."""
+    """-> (state, src, dst). state: linked, foreign (a symlink to somewhere else), absent, todo, conflict,
+    nested (dst would land in a folder another tool's link points at)."""
     src, dst = under_home(old_rel), os.path.join(store, 'sessions', new_rel)
     if os.path.islink(src):
         same = os.path.realpath(src) == os.path.realpath(dst)
@@ -303,7 +304,22 @@ def session_status(store, tool, old_rel, new_rel):
         return 'absent', src, dst
     if os.path.lexists(dst):
         return 'conflict', src, dst
+    if linked_above(dst):
+        return 'nested', src, dst
     return 'todo', src, dst
+
+
+def linked_above(dst):
+    """The tool folder whose link points at a folder holding dst, or None. A store set up by hand can link
+    ~/.copilot/session-state to sessions/copilot, where VS Code's folders would then be moved (2026-10-18)."""
+    parent = os.path.realpath(os.path.dirname(dst))
+    for _, old, _ in SESSION_FOLDERS:
+        src = under_home(old)
+        if os.path.islink(src):
+            target = os.path.realpath(src)
+            if parent == target or parent.startswith(target + os.sep):
+                return src
+    return None
 
 
 def survey_sessions(store):
@@ -314,7 +330,9 @@ def survey_sessions(store):
                 'foreign': f'skip      {tilde(src)} (a symlink elsewhere: {tilde(os.readlink(src)) if os.path.islink(src) else ""})',
                 'absent': f'not here  {tilde(src)}',
                 'todo': f'missing   {tilde(src)}',
-                'conflict': f'skip      {tilde(src)} ({tilde(dst)} already exists; sort it out by hand)'}[st]
+                'conflict': f'skip      {tilde(src)} ({tilde(dst)} already exists; sort it out by hand)',
+                'nested': f'skip      {tilde(src)} ({tilde(dst)} would be inside the folder {tilde(linked_above(dst) or "")} '
+                          'links to; sort it out by hand)'}[st]
         details.append(f'{tool}: {text}')
         if st == 'todo':
             missing = True
