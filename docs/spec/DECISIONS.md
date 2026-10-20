@@ -58,3 +58,34 @@ the agent hook; gitpro registering its own as well would run the hook twice.
 The llmpro repo carries `.claude-plugin/plugin.json`, `.mcp.json`, `hooks/hooks.json` and
 `skills/llmpro/`. The hook runs `llmpro hook agent-check`, which forwards to `gitpro agent-check` when
 gitpro has that capability, and passes otherwise.
+
+## Round 2 (2026-10-20): lessons from harness2
+
+Ideas taken from Google Research's harness2 (github.com/google-research/harness2, Apache 2.0). No code
+or text was copied; the credit sits in FORMAT.md. Decided by Claude while the user was away ("dont wait
+for me"); the user reviews them.
+
+## H1. A lesson carries cue, evidence and confidence
+
+Feedback and project memories may carry `cue`, `evidence` and `confidence`. At most one lesson per
+session, often none, and "confounded" rather than a guess. `check` fails a lesson whose evidence is
+missing or points into `local/` or `sessions/`; a memory without the fields is fine, so imported tool
+memories never block a sync.
+
+## H2. The MCP server never returns local content
+
+The MCP `find` always passes `--shared-only`, and a last gate in `mcp.py` drops any hit under `local/`
+or `sessions/` or outside the store. An assistant can be backed by a cloud model, so what the MCP server
+returns counts as leaving the machine. `llmpro find` at the terminal still searches `local/history/`.
+
+## H3. Each chat records its harness as a store commit
+
+`harness: <12-char commit>` in a chat's frontmatter: the last first-parent commit of the store at or
+before the chat started. Set once and kept. The first sync after the change rewrites every chat whose
+source is on the machine, once. A content hash of the harness parts (as harness2 does) was not chosen:
+the store is already a git repo, and a commit names the same thing.
+
+## H4. config.toml [harness] names the parts; setup only reports for now
+
+Parts: instructions, memory, skills, and optional guardrails, subagents, scripts, hooks. `setup -n`
+shows which tools get each part. Placing new parts in tool configs waits for a later round.

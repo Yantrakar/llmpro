@@ -6,8 +6,9 @@ gitpro's code. `01-design.md` is the design of agentspro itself (2026-10-16). Th
 | File | What |
 |---|---|
 | `00-existing.md` | The facts each package needs about llmpro and gitpro today |
-| `DECISIONS.md` | The decisions this round rests on (I1 to I8) |
+| `DECISIONS.md` | The decisions this round rests on (I1 to I8; round 2: H1 to H4) |
 | `02-rename.md` ... `08-bundle.md` | One work package each |
+| `09-lessons.md` ... `12-harness-manifest.md` | Round 2 (2026-10-20): ideas from harness2 |
 
 Each package file is self-contained: an agent that has read this file, `00-existing.md`,
 `DECISIONS.md` and its own package file has everything it needs. Where a package uses something an
@@ -23,6 +24,8 @@ Status: draft, 2026-10-17. Proposed by Claude while the user was away; the user 
 | 2 | 03 plugin contract, registry, git adapter, test fixtures | alone |
 | 3 | 04 MCP, 05 setup, 06 push guard, 07 privacy by identity | in parallel |
 | 4 | 08 skill, Claude Code plugin, README | alone |
+| 5 | 09 lessons, 10 MCP gate, 12 harness manifest | in parallel |
+| 6 | 11 harness commit per chat | alone |
 
 After each wave the integrator (not a package) merges the branches, runs the whole suite and edits
 `CHANGELOG.md`. No package edits `CHANGELOG.md`.
