@@ -273,3 +273,11 @@ def test_uninstall(home, store, capsys, claude):
     assert 'claude plugin marketplace add' in undo
     assert 'claude plugin install harness-hooks@llmpro-harness --scope user' in undo
     assert claude.state()['plugins'] == {} and claude.state()['markets'] == {}
+
+
+def test_preview_lists_steps_in_the_order_apply_does_them(home, store, capsys, claude):
+    (home / '.claude').mkdir()
+    todo = [i for i in setup.survey(store, None) if i.name == 'harness'][0].todo
+    kinds = [setup.harness_step(t) for t in todo]
+    assert kinds == sorted(kinds) and set(kinds) == {0, 1, 2, 3}, todo
+    assert todo.index('create hooks/ with a README.md') < todo.index('create hooks/claude-code/hooks/hooks.json')

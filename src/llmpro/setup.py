@@ -452,6 +452,15 @@ def harness_tool_states(store, part, path):
     return out
 
 
+def harness_step(line):
+    """Sort key for a harness todo line: part folders, links, plugin files, then the claude commands."""
+    if line.startswith('create ') and line.endswith('with a README.md'):
+        return 0
+    if line.startswith('link '):
+        return 1
+    return 2 if line.startswith('create ') else 3
+
+
 def survey_harness(store):
     from . import harness
     cfg.load_harness(store)
@@ -469,10 +478,10 @@ def survey_harness(store):
             details.append(f'{part}: {shown}  {states}')
         n, t, m = harness.survey_files(store)
     notes += n
-    todo = t + todo
+    todo += t
     missing = missing or m
     notes = list(dict.fromkeys(notes))
-    todo = list(dict.fromkeys(todo))
+    todo = sorted(dict.fromkeys(todo), key=harness_step)  # the order harness.apply does them in
     return Item('harness', missing, 'missing' if missing else 'present', details + notes, todo)
 
 
