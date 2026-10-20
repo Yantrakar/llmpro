@@ -254,6 +254,9 @@ def test_uninstall_reverses_setup_and_keeps_the_store(machine, capsys, onpath):
     assert (machine / '.claude/CLAUDE.md').read_text() == '# mine\nkeep this\n'  # setup added the final newline
     now = snapshot(machine)
     now.pop('.claude/CLAUDE.md'), before.pop('.claude/CLAUDE.md')
+    from llmpro.harness import PLACES
+    places = [place for _, _, place, _ in PLACES if place]  # uninstall leaves a real copy of each harness link
+    now = {k: v for k, v in now.items() if not any(k == p or k.startswith(p + '/') for p in places)}
     assert now == before
     assert (store / 'history-note.md').read_text() == 'keep me\n'
     assert (store / 'sessions').is_dir()  # the store is never deleted
