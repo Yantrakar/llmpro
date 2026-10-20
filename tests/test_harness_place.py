@@ -192,11 +192,11 @@ def test_skills_elsewhere_codex_is_unsupported(home, tmp_path, capsys):
     assert harness.state(str(other), 'skills', 'codex') == ('unsupported', 'Codex reads only ~/.agents/skills')
 
 
-def test_guardrails_and_claude_hooks_are_not_placed_yet(home, store, capsys):
+def test_codex_guardrails_go_in_its_hooks_folder(home, store, capsys):
     (home / '.claude').mkdir()
     (home / '.codex').mkdir()
     out = run(['setup', '-n'], capsys)[1]
-    assert 'not placed yet' in line(out, 'hooks')
+    assert 'claude-code not here' in line(out, 'hooks')
     assert 'put guardrails in hooks/codex/' in line(out, 'guardrails')
 
 

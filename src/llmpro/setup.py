@@ -456,16 +456,23 @@ def survey_harness(store):
     from . import harness
     cfg.load_harness(store)
     details, notes, todo, missing = [], [], [], False
-    for part, path in cfg.harness_parts():
-        shown = path if os.path.exists(os.path.join(store, path)) else f'{path} (not in the store)'
-        if part in harness.PLACED_PARTS:
-            states, n, t, m = harness.survey_part(store, part, path)
-            notes += n
-            todo += t
-            missing = missing or m
-        else:
-            states = ', '.join(f'{t} {s}' for t, s in harness_tool_states(store, part, path))
-        details.append(f'{part}: {shown}  {states}')
+    with harness.cached():
+        for part, path in cfg.harness_parts():
+            shown = path if os.path.exists(os.path.join(store, path)) else f'{path} (not in the store)'
+            if part in harness.PLACED_PARTS:
+                states, n, t, m = harness.survey_part(store, part, path)
+                notes += n
+                todo += t
+                missing = missing or m
+            else:
+                states = ', '.join(f'{t} {s}' for t, s in harness_tool_states(store, part, path))
+            details.append(f'{part}: {shown}  {states}')
+        n, t, m = harness.survey_files(store)
+    notes += n
+    todo = t + todo
+    missing = missing or m
+    notes = list(dict.fromkeys(notes))
+    todo = list(dict.fromkeys(todo))
     return Item('harness', missing, 'missing' if missing else 'present', details + notes, todo)
 
 
@@ -661,18 +668,23 @@ def plan_uninstall(store):
         if any(line.strip() in wanted for line in text.splitlines()):
             pointers.append(path)
     from . import harness
-    return sessions, hooks, configs, pointers, harness.links(store)
+    return sessions, hooks, configs, pointers, harness.links(store), harness.installed_plugins(store)
 
 
 def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
     """-> exit status, as setup(). The store itself is never deleted."""
     try:
-        sessions, hooks, configs, pointers, links = plan_uninstall(store)
+        from . import harness
+        sessions, hooks, configs, pointers, links, (exe, plugin_ids, market) = plan_uninstall(store)
         todo = ([f'move {tilde(dst)} back to {tilde(src)} and remove the symlink' for src, dst in sessions]
                 + [f'remove the hook {tilde(h)}' for h in hooks]
                 + [f'unset git config {k} in the store' for k, _ in configs]
                 + [f'remove the llmpro line from {tilde(p)}' for p in pointers]
-                + [f'replace the link {tilde(p)} with a copy of {tilde(real)}' for p, real in links])
+                + [f'replace the link {tilde(p)} with a copy of {tilde(real)}' for p, real in links]
+                + [f'claude plugin uninstall {pid} --scope user' for pid in plugin_ids]
+                + ([f'claude plugin marketplace remove {harness.MARKET}'] if market else []))
+        if plugin_ids or market:
+            todo.append('keep the hooks in ' + tilde(os.path.join(harness.part_dir(store, 'hooks'), 'claude-code/hooks/hooks.json')))
         from . import plugins
         ctx = plugins.context(store)
         owned = []  # (plugin name, SetupItem), plugins in reverse name order
@@ -737,6 +749,8 @@ def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
             from . import harness
             for place, _ in links:
                 harness.replace_with_copy(place, undo)
+            if plugin_ids or market:
+                harness.remove_plugins(store, exe, plugin_ids, market, undo)
         finally:
             finish(undo, 'uninstall')
         print('llmpro uninstall: done; the store is kept', file=sys.stderr)
