@@ -1,6 +1,7 @@
 """`llmpro find`: search the conversations and memories of the store. Plain reading, no index.
 
-Reads history/ and memory/ (and local/history/, which exists on this machine only). Never reads sessions/.
+Reads history/ and memory/ (and local/history/, which exists on this machine only; --shared-only leaves it out).
+Never reads sessions/.
 Case-insensitive; the words of the query must all occur in the same file.
 """
 import os
@@ -31,11 +32,12 @@ def walk(root):
                     yield e.path
 
 
-def candidates(store, machine, tool, since, want_history, want_memory):
+def candidates(store, machine, tool, since, want_history, want_memory, shared_only=False):
     """-> [(kind, path, rel, date, machine, tool)] of the files worth reading, filtered by what the path says."""
     out = []
     if want_history:
-        for base in ('history', os.path.join('local', 'history')):
+        bases = ('history',) if shared_only else ('history', os.path.join('local', 'history'))
+        for base in bases:
             for path in walk(os.path.join(store, base)):
                 rel = os.path.relpath(path, store)
                 parts = rel.split(os.sep)
@@ -74,11 +76,12 @@ def first_line(value):
     return ''
 
 
-def search(store, words, machine=None, tool=None, since=None, history=True, memory=True, verbose=False):
+def search(store, words, machine=None, tool=None, since=None, history=True, memory=True, verbose=False,
+           shared_only=False):
     """-> [hit dict], newest first. A hit: kind, date, machine, tool, scope, title, path, summary, lines."""
     words = [w.lower() for w in words]
     hits = []
-    for kind, path, rel, date, m, t in candidates(store, machine, tool, since, history, memory):
+    for kind, path, rel, date, m, t in candidates(store, machine, tool, since, history, memory, shared_only):
         try:
             with open(path, encoding='utf-8', errors='replace') as fh:
                 text = fh.read()
@@ -124,9 +127,10 @@ def render(hits, verbose=False):
     return out
 
 
-def run(store, query, machine=None, tool=None, since=None, history=True, memory=True, as_json=False, verbose=False):
+def run(store, query, machine=None, tool=None, since=None, history=True, memory=True, as_json=False, verbose=False,
+        shared_only=False):
     """-> 0 if anything was found, 1 if not."""
-    hits = search(store, query, machine, tool, since, history, memory, verbose)
+    hits = search(store, query, machine, tool, since, history, memory, verbose, shared_only)
     if as_json:
         jsonout.emit('find', hits)
     else:
