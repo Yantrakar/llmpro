@@ -1,11 +1,12 @@
 """`llmpro setup` and `llmpro uninstall`.
 
-setup looks at four things and changes only what is missing:
+setup looks at five things and changes only what is missing:
 
   1. the store            clone it from --hub, or create it from the templates
   2. git settings         hooks (one line each), the manifest merge driver, merge.ours.driver
   3. session folders      each tool's chat-log folder moves into STORE/sessions/, a symlink stays behind
   4. instruction pointers each assistant's global instruction file reads the store's AGENTS.md
+  5. harness              reports which tools get each part named in [harness]; changes nothing
 
 One preview, one y/N on a terminal. -y skips the question; without a terminal and without -y it refuses (exit 2).
 -n prints the state of each item and changes nothing: exit 1 if one is missing, 0 if all are in place.
@@ -431,6 +432,48 @@ def apply_pointers(store, undo):
         print(f'pointer   {tilde(path)}', file=sys.stderr)
 
 
+# ---------------------------------------------------------------- 5. harness
+
+SKILL_DIRS = {'claude-code': '.claude/skills', 'copilot-cli': '.copilot/skills'}  # links to STORE/skills
+READS_AGENTS_SKILLS = ('copilot-cli', 'codex', 'opencode')  # read ~/.agents/skills themselves
+
+
+def skills_state(store, tool, part_path):
+    """-> 'placed' or 'missing' for the skills part."""
+    target = os.path.realpath(os.path.join(store, part_path))
+    if os.path.realpath(store) == os.path.realpath(under_home('.agents')) and tool in READS_AGENTS_SKILLS:
+        return 'placed'
+    if tool in SKILL_DIRS and os.path.realpath(under_home(SKILL_DIRS[tool])) == target:
+        return 'placed'
+    return 'missing'
+
+
+def harness_tool_states(store, part, path):
+    """-> [(tool, state)] for instructions, memory and skills."""
+    out = []
+    for tool, folder, name, kind in POINTER_FILES:
+        if part == 'skills':
+            out.append((tool, skills_state(store, tool, path)))
+            continue
+        st = pointer_status(store, tool, folder, name, kind)[0]
+        if st != 'unreadable':
+            out.append((tool, {'present': 'placed', 'todo': 'missing', 'absent': 'not here'}[st]))
+    return out
+
+
+def survey_harness(store):
+    cfg.load_harness(store)
+    details = []
+    for part, path in cfg.harness_parts():
+        shown = path if os.path.exists(os.path.join(store, path)) else f'{path} (not in the store)'
+        if part in ('instructions', 'memory', 'skills'):
+            states = ', '.join(f'{t} {s}' for t, s in harness_tool_states(store, part, path))
+        else:
+            states = 'not placed by llmpro yet'
+        details.append(f'{part}: {shown}  {states}')
+    return Item('harness', False, 'present', details)
+
+
 # ---------------------------------------------------------------- setup
 
 def parse_only(only):
@@ -472,13 +515,14 @@ def survey_plugins(store, only=None):
 
 
 def survey(store, hub, only=None):
-    """-> the four core items, then the plugins' items. `only` (a set from parse_only) limits both."""
+    """-> the core items, then the plugins' items. `only` (a set from parse_only) limits both."""
     items = []
     if only is None or 'store' in only:
         items = [survey_store(store, hub)]
         if items[0].todo and items[0].todo[0].startswith('cannot use'):
             return items
-        items += [survey_settings(store), survey_sessions(store), survey_pointers(store)]
+        items += [survey_settings(store), survey_sessions(store), survey_pointers(store),
+                   survey_harness(store)]
     return items + survey_plugins(store, only)
 
 

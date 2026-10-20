@@ -5,6 +5,13 @@
 format = 1
 redact_version = 1
 
+[harness]
+# The parts of the harness this store holds: what every assistant loads. Paths are inside the store.
+# llmpro setup -n shows which tools get each part. Optional parts: guardrails, subagents, scripts, hooks.
+instructions = "AGENTS.md"
+memory = "memory/"
+skills = "skills/"
+
 [privacy]
 # Chats whose source file or working folder lies under one of these folders are imported into local/,
 # which git ignores: they stay on this machine and are never committed or sent to the hub.
