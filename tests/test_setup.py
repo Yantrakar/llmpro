@@ -106,7 +106,7 @@ def test_second_setup_shows_nothing_missing(machine, capsys, onpath):
     assert run(['setup', '-y'], capsys)[0] == 0
     scripts = os.listdir(machine / 'state/llmpro')
     code, out, _ = run(['setup', '-n'], capsys)
-    assert code == 0 and not [l for l in out.splitlines() if l.endswith('missing')]  # harness lines may say missing
+    assert code == 0 and not [l for l in out.splitlines() if not l.startswith(' ') and l.endswith('missing')]  # item states only; harness details may say missing
     before = snapshot(machine)
     code, out, _ = run(['setup', '-y'], capsys)
     assert code == 0 and 'in place' in out and 'To undo' not in out
