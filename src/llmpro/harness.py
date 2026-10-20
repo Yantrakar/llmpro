@@ -6,12 +6,15 @@ tool already has there into the store. Nothing here converts a format: the store
 
 setup.py calls survey_part() for the survey, apply() to make the changes, and links() for uninstall.
 """
+import contextlib
+import json
 import os
 import shlex
 import shutil
+import subprocess
 import sys
 
-from . import setup as _setup, store as cfg
+from . import setup as _setup, store as cfg, tools
 
 # (part, tool, place, target). Checked 2026-10-20. `place` is the path under HOME the tool reads, or None.
 # `target` is the path inside the part's folder that the place links to ('' is the folder itself), or
@@ -28,13 +31,17 @@ from . import setup as _setup, store as cfg
 #               codex        developers.openai.com/codex/subagents (~/.codex/agents/*.toml)
 #               copilot-cli  the cli-config-dir-reference above (~/.copilot/agents/*.agent.md)
 #               opencode     opencode.ai/docs/agents (~/.config/opencode/agents/*.md)
-#   hooks       claude-code  code.claude.com/docs/en/plugins and /plugins/components: hooks come from a plugin
-#                            (the Claude Code plugin is a later package)
+#   hooks       claude-code  code.claude.com/docs/en/plugins/loading, /plugins/create-marketplace and
+#                            /plugins/cli-reference: hooks come from a plugin. A local-path marketplace with
+#                            relative plugin sources is loaded in place. `claude plugin marketplace list --json`
+#                            and `claude plugin list --json` give JSON arrays; list entries have id, version,
+#                            scope, enabled, installPath; marketplace entries have name, source, path.
+#                            The target 'plugin:<name>' means the store's plugin of that name (see PLUGINS).
 #               codex        learn.chatgpt.com/docs/hooks (~/.codex/hooks.json)
 #               copilot-cli  docs.github.com/en/copilot/reference/hooks-reference and the
 #                            cli-config-dir-reference (~/.copilot/hooks/*.json)
 #               opencode     opencode.ai/docs/plugins (~/.config/opencode/plugins/, JS or TS)
-#   guardrails  claude-code  a plugin, like its hooks
+#   guardrails  claude-code  a second plugin, like its hooks
 #               the others   each loads hooks from one place only, so a guardrail goes in hooks/<tool>/
 PLACES = (
     ('skills', 'claude-code', '.claude/skills', ''),
@@ -45,15 +52,24 @@ PLACES = (
     ('subagents', 'codex', '.codex/agents', 'codex'),
     ('subagents', 'copilot-cli', '.copilot/agents', 'copilot-cli'),
     ('subagents', 'opencode', '.config/opencode/agents', 'opencode'),
-    ('hooks', 'claude-code', None, 'unsupported: not placed yet'),
+    ('hooks', 'claude-code', None, 'plugin:harness-hooks'),
     ('hooks', 'codex', '.codex/hooks.json', 'codex/hooks.json'),
     ('hooks', 'copilot-cli', '.copilot/hooks', 'copilot-cli'),
     ('hooks', 'opencode', '.config/opencode/plugins', 'opencode'),
-    ('guardrails', 'claude-code', None, 'unsupported: not placed yet'),
+    ('guardrails', 'claude-code', None, 'plugin:harness-guardrails'),
     ('guardrails', 'codex', None, 'unsupported: Codex loads hooks from one place; put guardrails in hooks/codex/'),
     ('guardrails', 'copilot-cli', None, 'unsupported: Copilot CLI loads hooks from one place; put guardrails in hooks/copilot-cli/'),
     ('guardrails', 'opencode', None, 'unsupported: opencode loads hooks from one place; put guardrails in hooks/opencode/'),
 )
+
+MARKET = 'llmpro-harness'
+# part -> (plugin name, description). Each plugin lives in <part folder>/claude-code/.
+PLUGINS = {
+    'hooks': ('harness-hooks', 'Hooks from the llmpro store, loaded in place from hooks/claude-code.'),
+    'guardrails': ('harness-guardrails', 'Guardrails from the llmpro store, loaded in place from guardrails/claude-code.'),
+}
+CLAUDE_TIMEOUT = 30
+MARKET_FILE = '.claude-plugin/marketplace.json'
 
 PLACED_PARTS = ('skills', 'subagents', 'hooks', 'guardrails', 'scripts')
 NEVER_CREATED = ('instructions', 'memory')  # the store already has these
@@ -70,12 +86,12 @@ _WHERE = {
                    'Copilot CLI: ~/.copilot/agents links to agents/copilot-cli/ (files ending .agent.md).',
                    'opencode: ~/.config/opencode/agents links to agents/opencode/ (files ending .md).']),
     'hooks': ('Hooks: commands a tool runs on its events. One folder per tool: hooks/<tool>/.',
-              ['Claude Code: hooks come from a plugin, not from a link; setup does not place them yet.',
+              ['Claude Code: hooks come from the harness-hooks plugin in hooks/claude-code/, which setup installs through the llmpro-harness plugins marketplace.',
                'Codex: ~/.codex/hooks.json links to hooks/codex/hooks.json.',
                'Copilot CLI: ~/.copilot/hooks links to hooks/copilot-cli/ (files ending .json).',
                'opencode: ~/.config/opencode/plugins links to hooks/opencode/ (JS or TS files).']),
     'guardrails': ('Guardrails: hooks that stop an assistant. Today only Claude Code has its own place: guardrails/claude-code/.',
-                   ['Claude Code: placed through a plugin; setup does not place them yet.',
+                   ['Claude Code: placed through the harness-guardrails plugin in guardrails/claude-code/, which setup installs through the llmpro-harness plugins marketplace.',
                     'Codex, Copilot CLI and opencode load hooks from one place, so put their guardrails in hooks/<tool>/.']),
     'scripts': ('Scripts: commands for every assistant and for you, as files at the top of this folder.',
                 ['setup links each executable file into ~/.local/bin, so it is on PATH.',
@@ -142,6 +158,8 @@ def state(store, part, tool):
     _, _, place, target = row
     if part == 'skills' and tool in _setup.READS_AGENTS_SKILLS and _same(store, _setup.under_home('.agents')):
         return 'placed', ''
+    if target.startswith('plugin:'):
+        return _plugin_state(store, part)
     if place is None or target.startswith('unsupported:'):
         return 'unsupported', target[len('unsupported:'):].strip()
     folder = _tool_folder(tool)
@@ -195,6 +213,220 @@ def script_states(store):
     return out
 
 
+
+# ---------------------------------------------------------------- Claude Code plugins
+
+_cache = None
+
+
+@contextlib.contextmanager
+def cached():
+    """Within this block each `claude` listing runs at most once."""
+    global _cache
+    old, _cache = _cache, {}
+    try:
+        yield
+    finally:
+        _cache = old
+
+
+def _plugin_dir(store, part):
+    return os.path.join(part_dir(store, part), 'claude-code')
+
+
+def _rel(store, path):
+    return os.path.relpath(path, store)
+
+
+def _market_json(store):
+    return {'name': MARKET, 'owner': {'name': 'llmpro'},
+            'plugins': [{'name': PLUGINS[part][0], 'source': './' + _rel(store, _plugin_dir(store, part))}
+                        for part in PLUGINS]}
+
+
+def plugin_files(store):
+    """-> [(path, text)] of the plugin files the store should have, in the order they are made."""
+    out = [(os.path.join(store, MARKET_FILE), json.dumps(_market_json(store), indent=2) + '\n')]
+    for part, (name, desc) in PLUGINS.items():
+        base = _plugin_dir(store, part)
+        out.append((os.path.join(base, '.claude-plugin', 'plugin.json'),
+                    json.dumps({'name': name, 'description': desc}, indent=2) + '\n'))
+        out.append((os.path.join(base, 'hooks', 'hooks.json'), json.dumps({'hooks': {}}, indent=2) + '\n'))
+    return out
+
+
+def _market_problem(store):
+    """-> None, or what is wrong with an existing marketplace.json."""
+    path = os.path.join(store, MARKET_FILE)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding='utf-8') as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return f'{MARKET_FILE} does not parse ({exc}); llmpro leaves it; fix or remove it, then run llmpro setup'
+    plugins = data.get('plugins') if isinstance(data, dict) else None
+    have = {p.get('name') for p in plugins if isinstance(p, dict)} if isinstance(plugins, list) else set()
+    lacks = [PLUGINS[part][0] for part in PLUGINS if PLUGINS[part][0] not in have]
+    if lacks:
+        return f'{MARKET_FILE} lacks the plugin {" and ".join(lacks)}; llmpro leaves it; add it or remove the file, then run llmpro setup'
+    return None
+
+
+def survey_files(store):
+    """-> ([notes], [todo lines], missing) for the plugin files."""
+    notes, todo = [], []
+    problem = _market_problem(store)
+    if problem:
+        notes.append('  ' + problem)
+    for path, _ in plugin_files(store):
+        if not os.path.exists(path):
+            todo.append(f'create {_rel(store, path)}')
+    return notes, todo, bool(todo)
+
+
+def _short(text):
+    lines = (text or '').strip().splitlines()
+    return lines[0] if lines else 'no message'
+
+
+def _claude_list(exe, args):
+    """-> (list, None) or (None, what went wrong), for `claude <args>`."""
+    shown = 'claude ' + ' '.join(args)
+    try:
+        r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=CLAUDE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return None, f'`{shown}` did not finish in {CLAUDE_TIMEOUT} s'
+    except OSError as exc:
+        return None, f'`{shown}` could not run ({exc.strerror or exc})'
+    if r.returncode != 0:
+        return None, f'`{shown}` exited with status {r.returncode}: {_short(r.stderr)}'
+    try:
+        data = json.loads(r.stdout)
+    except ValueError:
+        return None, f'`{shown}` exited with status 0 but printed no JSON: {_short(r.stderr or r.stdout)}'
+    if not isinstance(data, list) or not all(isinstance(e, dict) for e in data):
+        return None, f'`{shown}` exited with status 0 but did not print a JSON list: {_short(r.stderr)}'
+    return data, None
+
+
+def _probe(store):
+    exe = tools.which('claude')
+    if not exe or not os.path.isdir(_setup.under_home('.claude')):
+        return {'state': 'not here'}
+    markets, bad = _claude_list(exe, ['plugin', 'marketplace', 'list', '--json'])
+    if bad is None:
+        plugins, bad = _claude_list(exe, ['plugin', 'list', '--json'])
+    if bad:
+        return {'state': 'unknown', 'detail': bad}
+    here, elsewhere = False, None
+    for m in markets:
+        if m.get('name') == MARKET:
+            if isinstance(m.get('path'), str) and _same(m['path'], store):
+                here = True
+            else:
+                elsewhere = m.get('path') or m.get('source') or 'somewhere else'
+    return {'state': 'ok', 'exe': exe, 'here': here, 'elsewhere': elsewhere,
+            'plugins': {e.get('id'): bool(e.get('enabled')) for e in plugins}}
+
+
+def _info(store):
+    if _cache is None:
+        return _probe(store)
+    key = os.path.realpath(store)
+    if key not in _cache:
+        _cache[key] = _probe(store)
+    return _cache[key]
+
+
+def _plugin_state(store, part, info=None):
+    info = info or _info(store)
+    if info['state'] != 'ok':
+        return info['state'], info.get('detail', '')
+    problem = _market_problem(store)
+    if problem:
+        return 'unknown', problem
+    if info['elsewhere']:
+        return 'linked elsewhere', (f'the marketplace {MARKET} points at {info["elsewhere"]}; llmpro leaves it; '
+                                    f'run claude plugin marketplace remove {MARKET} to let setup place it')
+    pid = f'{PLUGINS[part][0]}@{MARKET}'
+    if info['here'] and pid in info['plugins']:
+        if info['plugins'][pid]:
+            return 'placed', ''
+        return 'disabled', f'you turned it off; run claude plugin enable {pid} to turn it on'
+    return 'missing', ''
+
+
+def _plugin_todo(store, part):
+    lines = []
+    if not _info(store).get('here'):
+        lines.append(f'claude plugin marketplace add {store}')
+    lines.append(f'claude plugin install {PLUGINS[part][0]}@{MARKET} --scope user')
+    return lines
+
+
+def _claude(exe, args, done):
+    shown = 'claude ' + ' '.join(args)
+    after = (' Already done: ' + '; '.join(done) + '. The undo script covers it.') if done else ' Nothing was changed through claude yet.'
+    try:
+        r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=CLAUDE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise _setup.SetupError(f'`{shown}` did not finish in {CLAUDE_TIMEOUT} s.{after}')
+    except OSError as exc:
+        raise _setup.SetupError(f'`{shown}` could not run ({exc.strerror or exc}).{after}')
+    if r.returncode != 0:
+        raise _setup.SetupError(f'`{shown}` failed with exit status {r.returncode}: {r.stderr.strip() or "no message"}.{after}')
+    _say('ran', shown)
+
+
+def _make_plugin_files(store, undo):
+    for path, text in plugin_files(store):
+        if os.path.exists(path):
+            continue
+        _make_dir(os.path.dirname(path), undo)
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write(text)
+        undo.raw(f'rm -f {shlex.quote(path)}')
+        _say('created', _setup.tilde(path))
+
+
+def _apply_plugins(store, undo):
+    info = _probe(store)
+    need = [part for part in PLUGINS if _plugin_state(store, part, info)[0] == 'missing']
+    if not need:
+        return
+    exe, done = info['exe'], []
+    if not info['here']:
+        _claude(exe, ['plugin', 'marketplace', 'add', store], done)
+        undo.run('claude', 'plugin', 'marketplace', 'remove', MARKET)
+        done.append(f'added the marketplace {MARKET}')
+    for part in need:
+        pid = f'{PLUGINS[part][0]}@{MARKET}'
+        _claude(exe, ['plugin', 'install', pid, '--scope', 'user'], done)
+        undo.run('claude', 'plugin', 'uninstall', pid, '--scope', 'user')
+        done.append(f'installed {pid}')
+
+
+def installed_plugins(store):
+    """-> (exe, [plugin ids installed from our marketplace], whether the marketplace is ours), for uninstall."""
+    info = _probe(store)
+    if info['state'] != 'ok' or info['elsewhere']:
+        return None, [], False
+    ids = [f'{PLUGINS[part][0]}@{MARKET}' for part in PLUGINS if f'{PLUGINS[part][0]}@{MARKET}' in info['plugins']]
+    return info['exe'], ids, info['here']
+
+
+def remove_plugins(store, exe, ids, market, undo):
+    done = []
+    for pid in ids:
+        _claude(exe, ['plugin', 'uninstall', pid, '--scope', 'user'], done)
+        undo.run('claude', 'plugin', 'install', pid, '--scope', 'user')
+        done.append(f'uninstalled {pid}')
+    if market:
+        _claude(exe, ['plugin', 'marketplace', 'remove', MARKET], done)
+        undo.run('claude', 'plugin', 'marketplace', 'add', store)
+
+
 # ---------------------------------------------------------------- survey
 
 def _folder_missing(store, part):
@@ -228,8 +460,11 @@ def survey_part(store, part, path):
     for _, tool, place, target in rows(part):
         st, detail = state(store, part, tool)
         cells.append(f'{tool} unsupported ({detail})' if st == 'unsupported' else f'{tool} {st}')
-        if st in ('clash', 'linked elsewhere'):
+        if st in ('clash', 'linked elsewhere', 'unknown', 'disabled'):
             notes.append(f'  {tool} {part} {st}: {detail}')
+        elif st == 'missing' and target.startswith('plugin:'):
+            missing = True
+            todo += _plugin_todo(store, part)
         elif st == 'missing':
             missing = True
             p, t = _setup.under_home(place), _target_path(store, part, target)
@@ -304,7 +539,7 @@ def apply(store, undo):
         if _folder_missing(store, part):
             _make_part_folder(store, part, undo)
     for part, tool, place, target in PLACES:
-        if state(store, part, tool)[0] == 'missing':
+        if not target.startswith('plugin:') and state(store, part, tool)[0] == 'missing':
             _link_place(store, part, tool, undo)
     for name, st, _ in script_states(store):
         if st != 'missing':
@@ -314,6 +549,8 @@ def apply(store, undo):
         os.symlink(src, dest)
         undo.raw(f'[ -L {shlex.quote(dest)} ] && rm {shlex.quote(dest)}')
         _say('linked', f'{_setup.tilde(dest)} -> {_setup.tilde(src)}')
+    _make_plugin_files(store, undo)
+    _apply_plugins(store, undo)
 
 
 # ---------------------------------------------------------------- uninstall

@@ -75,7 +75,7 @@ def tool_calls(folder, name):
 
 
 def mcp_changes(folder, name):
-    return [c for c in tool_calls(folder, name) if c[:2] != ['mcp', 'get']]
+    return [c for c in tool_calls(folder, name) if c[:1] == ['mcp'] and c[:2] != ['mcp', 'get']]
 
 
 def pending(*entries):
