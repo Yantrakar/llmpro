@@ -102,7 +102,7 @@ def search(store, words, machine=None, tool=None, since=None, history=True, memo
         else:
             hit = {'kind': 'history', 'date': date or str(fields.get('started') or '')[:10], 'machine': m,
                    'tool': t, 'scope': '', 'title': str(fields.get('title') or ''), 'path': rel,
-                   'summary': first_line(fields.get('summary'))}
+                   'summary': first_line(fields.get('summary')), 'harness': str(fields.get('harness') or '')}
         if verbose:
             hit['lines'] = matching_lines(text, words)
         hits.append(hit)

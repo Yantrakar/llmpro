@@ -658,7 +658,7 @@ def inline_cmd(cmd):
     return f'{tick}{pad}{first}{pad}{tick}{extra}'
 
 
-def render(conv, summary=''):
+def render(conv, summary='', harness=''):
     hits = []
     fields = {
         'id': f'{conv.tool}:{conv.original_id}',
@@ -669,9 +669,11 @@ def render(conv, summary=''):
         'title': redact(conv.title, hits),
         'started': iso(conv.started),
         'updated': iso(conv.updated),
-        'source_file': conv.source_file,
-        'summary': summary or 'TODO: summary not written yet',
     }
+    if harness:
+        fields['harness'] = harness
+    fields['source_file'] = conv.source_file
+    fields['summary'] = summary or 'TODO: summary not written yet'
     out = [frontmatter(fields)]
     last_role = None
     for it in conv.items:

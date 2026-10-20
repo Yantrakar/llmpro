@@ -2,9 +2,12 @@
 
 Read-only on the sources. Re-runs update changed conversations in place and keep hand-written summaries.
 """
+import bisect
 import os
+import subprocess
 import sys
 
+from .. import tools as outside
 from ..redact import (MACHINE, load_manifest, manifest_entry, output_path, read_frontmatter,
                       render, save_manifest, step, sweep, write_text)
 from ..sources import claude_code, codex, copilot, copilot_cli, opencode
@@ -12,11 +15,42 @@ from ..sources import claude_code, codex, copilot, copilot_cli, opencode
 TOOLS = {'codex': codex, 'claude-code': claude_code, 'copilot': copilot, 'copilot-cli': copilot_cli, 'opencode': opencode}
 
 
+def store_commits(store):
+    """-> [(committer time, 12-char id)] of the store's first-parent commits, oldest first, from one git call.
+    Empty when there is no git, no commit or an error: the import then goes on without a harness."""
+    git = outside.which('git')
+    if not git:
+        return []
+    try:
+        res = subprocess.run([git, '-C', store, 'log', '--first-parent', '--format=%H %ct', 'HEAD'],
+                             capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if res.returncode != 0:
+        return []
+    rows = []
+    for line in reversed(res.stdout.splitlines()):  # git lists newest first
+        sha, _, when = line.partition(' ')
+        if sha and when.strip().isdigit():
+            rows.append((int(when), sha[:12]))
+    rows.sort(key=lambda r: r[0])  # stable, so equal times keep the older commit first
+    return rows
+
+
+def harness_at(commits, started):
+    """-> the id of the last commit at or before `started`, or ''."""
+    if not commits or started is None:
+        return ''
+    i = bisect.bisect_right([c[0] for c in commits], started.timestamp())
+    return commits[i - 1][1] if i else ''
+
+
 def run(store, tools=None, only=None):
     """tools: the tool names to read (default: all); only: TOOL:ORIGINAL_ID to convert (no manifest update)."""
     only = set(only or [])
     manifest = {} if only else load_manifest(store)
     stats = {}
+    commits = store_commits(store)  # one git call for the whole run
     pending = []  # rendered conversations; written after every password in this run has been learned
 
     for tool in tools or TOOLS:
@@ -53,14 +87,17 @@ def run(store, tools=None, only=None):
             out = output_path(store, conv)
             rel = os.path.relpath(out, store)
             old_rel = (manifest.get(key) or {}).get('output')
-            summary = ''
+            summary = harness = ''
             for candidate in [os.path.join(store, old_rel)] if old_rel else []:
-                summary = read_frontmatter(candidate)[0].get('summary', '')
-            if not summary and os.path.exists(out):
-                summary = read_frontmatter(out)[0].get('summary', '')
+                fields = read_frontmatter(candidate)[0]
+                summary, harness = fields.get('summary', ''), fields.get('harness', '')
+            if os.path.exists(out):
+                fields = read_frontmatter(out)[0]
+                summary = summary or fields.get('summary', '')
+                harness = harness or fields.get('harness', '')
             if summary.startswith('TODO'):
                 summary = ''
-            text, hits = render(conv, summary)
+            text, hits = render(conv, summary, str(harness or '') or harness_at(commits, conv.started))
             pending.append((tool, conv, key, out, rel, old_rel, text, hits))
         step(f'history: {tool}: {len(convs)} sessions read and redacted')
 

@@ -76,6 +76,7 @@ project: <cwd or workspace folder>
 title: ...
 started: ISO-8601 with offset
 updated: ISO-8601 with offset
+harness: <store commit, 12 chars, when the chat started; kept once set>
 source_file: <original path>
 summary: |
   2-4 lines: what was asked, what was decided
