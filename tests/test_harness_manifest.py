@@ -7,7 +7,8 @@ import pytest
 
 from llmpro import cli, setup, store as cfg
 
-DEFAULTS = [('instructions', 'AGENTS.md'), ('memory', 'memory/'), ('skills', 'skills/')]
+DEFAULTS = [('instructions', 'AGENTS.md'), ('memory', 'memory/'), ('skills', 'skills/'), ('subagents', 'agents/'),
+            ('hooks', 'hooks/'), ('guardrails', 'guardrails/'), ('scripts', 'scripts/')]
 
 
 def run(argv, capsys):
@@ -40,16 +41,16 @@ def test_no_section_gives_the_defaults(store):
 
 
 def test_optional_part_is_accepted_and_listed(store):
-    set_config(store, '\n[harness]\nsubagents = "agents/"\n')
+    set_config(store, '\n[harness]\nsubagents = "helpers/"\n')
     cfg.configure(store)
-    assert cfg.harness_parts() == DEFAULTS + [('subagents', 'agents/')]
+    assert cfg.harness_parts() == [(p, 'helpers/' if p == 'subagents' else d) for p, d in DEFAULTS]
 
 
 def test_listed_in_parts_order(store):
     set_config(store, '\n[harness]\nhooks = "h"\nskills = "s/"\n')
     cfg.configure(store)
-    assert [p for p, _ in cfg.harness_parts()] == ['instructions', 'memory', 'skills', 'hooks']
-    assert dict(cfg.harness_parts())['skills'] == 's/'
+    assert [p for p, _ in cfg.harness_parts()] == [p for p, _ in DEFAULTS]
+    assert dict(cfg.harness_parts())['skills'] == 's/' and dict(cfg.harness_parts())['hooks'] == 'h'
 
 
 @pytest.mark.parametrize('body, key', [
@@ -86,19 +87,20 @@ def test_setup_reports_skills_when_linked(home, store, capsys):
     assert 'codex placed' in sk and 'opencode placed' in sk and 'copilot-cli placed' in sk
 
 
-def test_skills_in_another_store_are_missing_for_direct_readers(home, tmp_path, capsys):
+def test_skills_in_another_store_are_not_read_directly(home, tmp_path, capsys):
     other = tmp_path / 'other'
     other.mkdir()
     subprocess.run(['git', 'init', '-q', '-b', 'main', str(other)], check=True)
     (other / 'config.toml').write_text('[store]\nformat = 1\nredact_version = 1\n')
+    (home / '.config/opencode').mkdir(parents=True)
     sk = line(run(['--store', str(other), 'setup', '-n'], capsys)[1], 'skills')
-    assert 'codex missing' in sk and 'opencode missing' in sk
+    assert 'Codex reads only ~/.agents/skills' in sk and 'opencode missing' in sk
 
 
-def test_other_parts_are_not_placed_yet(store, capsys):
-    set_config(store, '\n[harness]\nsubagents = "agents/"\n')
+def test_placed_parts_list_every_tool(home, store, capsys):
     got = line(run(['setup', '-n'], capsys)[1], 'subagents')
-    assert got == 'subagents: agents/ (not in the store)  not placed by llmpro yet'
+    assert got == ('subagents: agents/ (not in the store)  claude-code not here, codex not here, '
+                   'copilot-cli not here, opencode not here')
 
 
 def test_missing_path_is_marked(store, capsys):
@@ -107,8 +109,8 @@ def test_missing_path_is_marked(store, capsys):
     assert '(not in the store)' not in line(run(['setup', '-n'], capsys)[1], 'memory')
 
 
-def test_harness_item_is_informational(home, store, capsys):
+def test_harness_item_is_missing_until_the_part_folders_exist(home, store, capsys):
     got = json.loads(run(['setup', '-n', '--json'], capsys)[1])
-    assert 'harness' not in got['missing']
+    assert 'harness' in got['missing']
     item = [i for i in got['items'] if i['name'] == 'harness'][0]
-    assert item['present'] is True and len(item['details']) == 3
+    assert item['present'] is False and len(item['details']) == 7

@@ -7,10 +7,14 @@ redact_version = 1
 
 [harness]
 # The parts of the harness this store holds: what every assistant loads. Paths are inside the store.
-# llmpro setup -n shows which tools get each part. Optional parts: guardrails, subagents, scripts, hooks.
-instructions = "AGENTS.md"
-memory = "memory/"
-skills = "skills/"
+# llmpro setup -n shows which tools get each part, and setup links each part into the tools that load it.
+instructions = "AGENTS.md"   # the entry file every assistant reads
+memory = "memory/"           # one fact per file
+skills = "skills/"           # every skill, the only copy
+subagents = "agents/"        # helper agents, one folder per tool: agents/<tool>/
+hooks = "hooks/"             # commands a tool runs on its events, one folder per tool: hooks/<tool>/
+guardrails = "guardrails/"   # hooks that stop an assistant: guardrails/claude-code/
+scripts = "scripts/"         # commands for every assistant and for you; setup puts them on PATH
 
 [privacy]
 # Chats whose source file or working folder lies under one of these folders are imported into local/,

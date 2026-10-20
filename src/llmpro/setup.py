@@ -6,7 +6,8 @@ setup looks at five things and changes only what is missing:
   2. git settings         hooks (one line each), the manifest merge driver, merge.ours.driver
   3. session folders      each tool's chat-log folder moves into STORE/sessions/, a symlink stays behind
   4. instruction pointers each assistant's global instruction file reads the store's AGENTS.md
-  5. harness              reports which tools get each part named in [harness]; changes nothing
+  5. harness              the parts named in [harness]: creates missing part folders, links each into the tools
+                        that load it, puts scripts on PATH
 
 One preview, one y/N on a terminal. -y skips the question; without a terminal and without -y it refuses (exit 2).
 -n prints the state of each item and changes nothing: exit 1 if one is missing, 0 if all are in place.
@@ -434,26 +435,16 @@ def apply_pointers(store, undo):
 
 # ---------------------------------------------------------------- 5. harness
 
-SKILL_DIRS = {'claude-code': '.claude/skills', 'copilot-cli': '.copilot/skills'}  # links to STORE/skills
 READS_AGENTS_SKILLS = ('copilot-cli', 'codex', 'opencode')  # read ~/.agents/skills themselves
 
 
-def skills_state(store, tool, part_path):
-    """-> 'placed' or 'missing' for the skills part."""
-    target = os.path.realpath(os.path.join(store, part_path))
-    if os.path.realpath(store) == os.path.realpath(under_home('.agents')) and tool in READS_AGENTS_SKILLS:
-        return 'placed'
-    if tool in SKILL_DIRS and os.path.realpath(under_home(SKILL_DIRS[tool])) == target:
-        return 'placed'
-    return 'missing'
-
-
 def harness_tool_states(store, part, path):
-    """-> [(tool, state)] for instructions, memory and skills."""
+    """-> [(tool, state)] for one part. The placed parts (skills, subagents, hooks, guardrails) come from harness."""
+    from . import harness
     out = []
     for tool, folder, name, kind in POINTER_FILES:
-        if part == 'skills':
-            out.append((tool, skills_state(store, tool, path)))
+        if part in harness.PLACED_PARTS:
+            out.append((tool, harness.state(store, part, tool)[0]))
             continue
         st = pointer_status(store, tool, folder, name, kind)[0]
         if st != 'unreadable':
@@ -462,16 +453,20 @@ def harness_tool_states(store, part, path):
 
 
 def survey_harness(store):
+    from . import harness
     cfg.load_harness(store)
-    details = []
+    details, notes, todo, missing = [], [], [], False
     for part, path in cfg.harness_parts():
         shown = path if os.path.exists(os.path.join(store, path)) else f'{path} (not in the store)'
-        if part in ('instructions', 'memory', 'skills'):
-            states = ', '.join(f'{t} {s}' for t, s in harness_tool_states(store, part, path))
+        if part in harness.PLACED_PARTS:
+            states, n, t, m = harness.survey_part(store, part, path)
+            notes += n
+            todo += t
+            missing = missing or m
         else:
-            states = 'not placed by llmpro yet'
+            states = ', '.join(f'{t} {s}' for t, s in harness_tool_states(store, part, path))
         details.append(f'{part}: {shown}  {states}')
-    return Item('harness', False, 'present', details)
+    return Item('harness', missing, 'missing' if missing else 'present', details + notes, todo)
 
 
 # ---------------------------------------------------------------- setup
@@ -613,6 +608,9 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False,
                     apply_sessions(store, undo)
                 if survey_pointers(store).missing:
                     apply_pointers(store, undo)
+                if survey_harness(store).missing:
+                    from . import harness
+                    harness.apply(store, undo)
             from . import plugins
             ctx = plugins.context(store)
             for it in missing:
@@ -631,7 +629,7 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False,
 # ---------------------------------------------------------------- uninstall
 
 def plan_uninstall(store):
-    """-> (sessions, hooks, configs, pointers): what uninstall would take away, from what is on disk now."""
+    """-> (sessions, hooks, configs, pointers, links): what uninstall would take away, from what is on disk now."""
     sessions = []
     for tool, old, new in SESSION_FOLDERS:
         st, src, dst = session_status(store, tool, old, new)
@@ -662,17 +660,19 @@ def plan_uninstall(store):
             continue
         if any(line.strip() in wanted for line in text.splitlines()):
             pointers.append(path)
-    return sessions, hooks, configs, pointers
+    from . import harness
+    return sessions, hooks, configs, pointers, harness.links(store)
 
 
 def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
     """-> exit status, as setup(). The store itself is never deleted."""
     try:
-        sessions, hooks, configs, pointers = plan_uninstall(store)
+        sessions, hooks, configs, pointers, links = plan_uninstall(store)
         todo = ([f'move {tilde(dst)} back to {tilde(src)} and remove the symlink' for src, dst in sessions]
                 + [f'remove the hook {tilde(h)}' for h in hooks]
                 + [f'unset git config {k} in the store' for k, _ in configs]
-                + [f'remove the llmpro line from {tilde(p)}' for p in pointers])
+                + [f'remove the llmpro line from {tilde(p)}' for p in pointers]
+                + [f'replace the link {tilde(p)} with a copy of {tilde(real)}' for p, real in links])
         from . import plugins
         ctx = plugins.context(store)
         owned = []  # (plugin name, SetupItem), plugins in reverse name order
@@ -734,6 +734,9 @@ def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
                     else:
                         os.remove(path)  # only the pointer was in it; the backup keeps the file
                     undo.raw(f'cp -p {shlex.quote(copy)} {shlex.quote(path)}')
+            from . import harness
+            for place, _ in links:
+                harness.replace_with_copy(place, undo)
         finally:
             finish(undo, 'uninstall')
         print('llmpro uninstall: done; the store is kept', file=sys.stderr)

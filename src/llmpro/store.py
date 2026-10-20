@@ -17,8 +17,9 @@ CONFIG_FILE = ''
 CONFIG = {}
 LOCAL_ONLY = []  # folders from config.toml [privacy] local_only, ~ expanded, without a trailing slash
 LOCAL_IDENTITIES = []  # gitpro identity ids from [privacy] local_identities; "default" is the default identity
-HARNESS_PARTS = ('instructions', 'memory', 'skills', 'guardrails', 'subagents', 'scripts', 'hooks')
-HARNESS_DEFAULTS = {'instructions': 'AGENTS.md', 'memory': 'memory/', 'skills': 'skills/'}
+HARNESS_PARTS = ('instructions', 'memory', 'skills', 'subagents', 'hooks', 'guardrails', 'scripts')
+HARNESS_DEFAULTS = {'instructions': 'AGENTS.md', 'memory': 'memory/', 'skills': 'skills/', 'subagents': 'agents/',
+                    'hooks': 'hooks/', 'guardrails': 'guardrails/', 'scripts': 'scripts/'}
 HARNESS = {}  # part -> path inside the store, from config.toml [harness]
 NOW_LOCAL = []  # outputs of chats already shared that now place as local by identity (filled while importing)
 QUIET = [False]  # progress lines off (-q)
@@ -67,8 +68,8 @@ def configure(store, required=True):
 
 
 def set_harness(config):
-    """Fill HARNESS from a parsed config.toml. Without a [harness] section the first three parts get their
-    usual paths. Stops with a message for an unknown key or a path that is not inside the store."""
+    """Fill HARNESS from a parsed config.toml. A part the section does not name gets its
+    usual path. Stops with a message for an unknown key or a path that is not inside the store."""
     section = config.get('harness', {})
     if not isinstance(section, dict):
         sys.exit(f'{CONFIG_FILE}: [harness] must be a table')
