@@ -26,6 +26,8 @@ Status: draft, 2026-10-17. Proposed by Claude while the user was away; the user 
 | 4 | 08 skill, Claude Code plugin, README | alone |
 | 5 | 09 lessons, 10 MCP gate, 12 harness manifest | in parallel |
 | 6 | 11 harness commit per chat | alone |
+| 7 | 13 setup places the harness | alone |
+| 8 | 14 Claude Code hooks and guardrails through a store plugin | alone |
 
 After each wave the integrator (not a package) merges the branches, runs the whole suite and edits
 `CHANGELOG.md`. No package edits `CHANGELOG.md`.
