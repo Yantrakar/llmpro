@@ -36,10 +36,18 @@ them. (Package 02 built the alias; it was taken out after wave 4.) The store's `
 `git_` prefix, through a `gitpro mcp` child started without `--allow-execution`. Tools whose description
 starts with "Deprecated" are not listed.
 
-## I5. llmpro never writes gitpro's config
+## I5. llmpro writes one line of gitpro's config, and no other file the user keeps by hand
 
-The push guard needs `[guard] chain_to` in `~/.config/gitpro.toml`. llmpro prints the line; the user adds
-it. This keeps gitpro's rule "suggest, user picks".
+The push guard needs `[guard] chain_to` in gitpro's config (`$GITPRO_CONFIG`, else
+`~/.config/gitpro.toml`). llmpro adds that line itself, in setup's one preview and question, after a copy
+of the file as it was (`<config>.before-llmpro`), then runs `gitpro setup -y --agent none` so gitpro's
+hooks pick it up; the undo script restores the copy and runs gitpro setup again. Uninstall takes out only
+the line llmpro wrote. A file that is not valid TOML, a `chain_to` that is already set, or a `[guard]`
+table llmpro cannot place the line in safely is left alone, and setup prints the lines to add by hand.
+Every other file the user writes by hand (Claude Code's settings files among them) llmpro never writes.
+
+Changed on 2026-10-20 at the user's word ("llmpro by default should add to gitpro dirs where its about
+git and hooks"). Before, llmpro only printed the line and the user added it.
 
 ## I6. Privacy by identity keeps a chat local when in doubt
 

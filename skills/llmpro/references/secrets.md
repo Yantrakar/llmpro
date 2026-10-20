@@ -23,7 +23,7 @@ A false positive goes into `.agentspro/allowlist.json` in the store, by fingerpr
 
 ## The push guard
 
-The push guard checks what a push adds to any repo, not only the store. It is a `pre-push` script that gitpro's global hook runs through `[guard] chain_to` in the user's `~/.config/gitpro.toml`. `llmpro setup` writes the script and prints the `chain_to` line. The user adds that line; llmpro never writes that file.
+The push guard checks what a push adds to any repo, not only the store. It is a `pre-push` script that gitpro's global hook runs through `[guard] chain_to` in the user's `~/.config/gitpro.toml`. `llmpro setup` writes the script, adds the `chain_to` line to that file (keeping a copy), and runs `gitpro setup -y --agent none`. If the file is one it cannot edit safely, it prints the line for the user to add. Tell the user to run `llmpro setup`, not `gitpro setup` on its own.
 
 - A push with a secret in it is stopped. The message names the commit, the file and the line.
 - To let one push go through when the user says so: `LLMPRO_SKIP=1 git push`. Do not set it on your own.

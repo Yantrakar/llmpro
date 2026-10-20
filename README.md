@@ -65,12 +65,14 @@ The hook runs before each Bash call. If gitpro is installed and can check comman
 
 The push guard checks what a push adds, in any repo, for secrets. If it finds one, the push stops.
 
-It works through gitpro's global git hooks. llmpro never writes your gitpro config, so after `llmpro setup` you add this to `~/.config/gitpro.toml` yourself:
+It works through gitpro's global git hooks. `llmpro setup` adds this to `~/.config/gitpro.toml`, in the same preview and question as the rest, and keeps the file as it was in `~/.config/gitpro.toml.before-llmpro`:
 
     [guard]
     chain_to = "~/.local/share/llmpro/hooks"
 
-`llmpro setup` prints the line when it is missing. To let one push through, run `LLMPRO_SKIP=1 git push`.
+Then it runs `gitpro setup -y --agent none`, so gitpro's hooks run the push guard. The undo script puts the file back. `llmpro uninstall` takes the line out again. If the file is one llmpro cannot edit safely (for example `chain_to` is already set), setup leaves it and prints the line to add.
+
+To let one push through, run `LLMPRO_SKIP=1 git push`.
 
 ## Keep work chats on this machine
 

@@ -8,7 +8,7 @@ Today the secret check guards only the store. With gitpro's global hooks in plac
 push from every repo on the machine: gitpro's `pre-push` hook runs `<chain_to>/pre-push`, and llmpro puts
 its own script there. The script checks the lines a push adds for known secret formats and for the
 secret values found in the assistants' raw logs (the leak check), and stops the push on a hit. llmpro
-never edits gitpro's config (DECISIONS I5): it prints the `chain_to` line for the user to add.
+adds the `chain_to` line to gitpro's config itself (DECISIONS I5, changed 2026-10-20).
 
 ## May edit
 
@@ -94,26 +94,30 @@ bare repo as the remote).
     Export `pushguard.SCRIPT` (that text) and `pushguard.hooks_dir()` (that folder).
 11. `secrets` plugin `setup_items` returns `[PushGuard()]` when gitpro has the capability `guard`, else
     `[]`. `PushGuard.survey` asks `gitpro guard status --json` and decides:
-    - script missing or different: missing; apply writes it (undo removes it, or restores the earlier
-      text if there was one).
-    - guard `installed` is `none`: not missing (llmpro does not install gitpro's hooks here; 05's item
-      runs gitpro setup); state `gitpro guard not installed`; detail `run llmpro setup again after gitpro
-      setup`.
-    - `chain_to` null: state `chain_to not set`; not missing for the plugin's own work, but its `todo`
-      lists, and setup prints at the end, the lines for the user to add to `~/.config/gitpro.toml` and
-      the command to run after:
+    - script missing or different: missing; apply writes it with mode 0755 in a folder made 0755 (undo
+      removes it, or restores the earlier text if there was one). A hook folder that group or others can
+      write is made private (`chmod go-w`), since gitpro refuses such a `chain_to` folder.
+    - guard `installed` is `none`: 05's item runs gitpro setup in the same run, which installs it; the
+      item goes on as for `chain_to` null.
+    - `chain_to` null: missing. Apply copies gitpro's config to `<config>.before-llmpro`, adds
 
       ```toml
       [guard]
       chain_to = "~/.local/share/llmpro/hooks"
       ```
 
-      then `gitpro setup`. llmpro never writes that file.
+      (the line goes right under a lone `[guard]` header when there is one), keeps the file's mode, and
+      runs `gitpro setup -y --agent none` so the hooks carry the new chain. The undo script puts the copy
+      back and runs gitpro setup again. When the config does not exist, is not valid TOML, has several
+      `[guard]` headers or a `guard` that is not a table, llmpro leaves it, and setup prints the lines for
+      the user to add by hand and says to run `llmpro setup` again.
     - `chain_to` is our folder (compare after `~` expansion and `realpath`): present, state `in place`.
     - `chain_to` is another folder: present but informing; state `chain_to is <path>`; detail
       `gitpro runs that folder's pre-push, not llmpro's; to use both, call llmpro hook push-guard from it`.
-12. `remove` takes out the script (undo puts it back) and prints, when `chain_to` points at our folder,
-    that the line in `gitpro.toml` can go too. `plan_remove` lists the same.
+12. `remove` takes out the script (undo puts it back). When the config holds the exact line llmpro writes,
+    it takes that line out (with its `[guard]` header when the table held nothing else, so a file setup
+    appended to comes back as it was), after a copy, and runs gitpro setup again; a `chain_to` pointing at our folder
+    that llmpro did not write is left, with a note to take it out by hand. `plan_remove` lists the same.
 
 ## Tests (`tests/test_push_guard.py`)
 
@@ -137,7 +141,8 @@ from the fixtures with a raw session file holding a fake token.
 - `scan_texts` returns hits as data and prints nothing (capsys); `llmpro check` output on the fixture
   store is the same before and after (compare with a recorded run in the test).
 - Setup item: with the fake answering `guard status --json` with `chain_to` null, `setup -n` shows the
-  `[guard]` lines and does not write `gitpro.toml` (the fake HOME has none afterwards); with `chain_to`
+  `[guard]` line it would add and writes nothing; `setup -y` adds it, keeps a copy and the mode, and runs
+  `gitpro setup -y --agent none`; a config llmpro cannot edit is left with the lines to add; with `chain_to`
   set to our folder and the script written, the item is in place; with another folder, the detail
   appears. `setup -y` writes the script with mode 0755 and the undo script removes it.
 

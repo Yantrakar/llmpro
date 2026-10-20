@@ -36,7 +36,8 @@ All notable changes to llmpro (developed as agentspro). The format follows
   config (after a backup; a config with comments is left for the user to edit).
 - A push guard for every repo: with gitpro's global hooks, `[guard] chain_to` can point
   at llmpro's hook folder, and each push is then checked for secrets in the lines it
-  adds. llmpro never writes `gitpro.toml`; setup prints the lines to add. `LLMPRO_SKIP=1`
+  adds. setup adds that line to gitpro's config itself (after a copy), runs
+  `gitpro setup -y --agent none`, and uninstall takes the line out. `LLMPRO_SKIP=1`
   lets one push through.
 - `[privacy] local_identities` in `config.toml`: chats of repos that gitpro places under
   one of those identities stay in `local/`. When gitpro cannot place a folder, its
@@ -88,3 +89,6 @@ All notable changes to llmpro (developed as agentspro). The format follows
   because its hooks call a command that is gone; `llmpro setup` or `llmpro sync` fixes
   that. New undo scripts go to
   `$XDG_STATE_HOME/llmpro`; earlier ones are still found under the old name.
+- The push guard's hook folder is made with mode 0755, and setup makes an existing one
+  private (`chmod go-w`): gitpro refuses a `chain_to` folder that others can write.
+  setup now adds the `chain_to` line itself instead of asking you to.

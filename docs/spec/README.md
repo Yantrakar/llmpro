@@ -48,8 +48,8 @@ After each wave the integrator (not a package) merges the branches, runs the who
 6. **Keep the hot path lean.** `llmpro hook ...` and `llmpro merge-driver ...` must not import argparse,
    the importers, the plugin registry or `importlib.metadata`.
 7. **Preview, confirm, undo.** Anything that changes the user's machine goes through `setup`'s one
-   preview and one question, and leaves an undo line. Nothing writes `~/.config/gitpro.toml` or any other
-   file the user writes by hand; llmpro prints the line for the user to add.
+   preview and one question, and leaves an undo line. Nothing writes a file the user writes by hand, with
+   one exception: the push guard's `chain_to` line in gitpro's config, added after a copy (DECISIONS I5).
 8. **`--json` uses the envelope** `{"ok": bool, "command": "<name>", ...}` from 02 (`llmpro.jsonout`).
    Keys that a command printed before stay, with the same meaning.
 9. **Exit codes**: 0 done, 1 a check or step failed or something is missing (`-n`), 2 usage or other

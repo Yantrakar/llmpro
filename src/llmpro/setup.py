@@ -617,7 +617,7 @@ def item_json(i):
 
 def yours(items):
     """At the end of setup: what an item that is in place still leaves for the person to do by hand, such as a
-    line for a file llmpro never writes (gitpro.toml)."""
+    line for a file llmpro left because it could not edit it safely."""
     lines = [f'  [{i.name}] {line}' for i in items if not i.missing for line in i.todo]
     lines += [f'  [{i.name}] {line}' for i in items for line in i.left]
     if lines:

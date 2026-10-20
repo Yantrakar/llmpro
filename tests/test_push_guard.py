@@ -248,6 +248,8 @@ def guard(fake_gitpro, machine, store, monkeypatch):
     gitpro.reset_cache()
     plugins.reset_cache()
 
+    monkeypatch.delenv('GITPRO_CONFIG', raising=False)
+
     def status(installed='global', chain_to=None):
         fake_gitpro.answer(['guard', 'status', '--json'], json.dumps(
             {'ok': True, 'command': 'guard', 'installed': installed, 'hooks_dir': '/x', 'chain_to': chain_to}))
@@ -260,13 +262,23 @@ def dry(store, capsys):
     return code, capsys.readouterr().out
 
 
-def test_item_shows_lines_and_never_writes_gitpro_toml(guard, store, machine, capsys):
+def test_no_gitpro_config_shows_the_lines_to_add_and_writes_nothing(guard, store, machine, capsys):
     guard()
     code, out = dry(store, capsys)
     assert code == 1
     assert 'push guard' in out and 'script missing' in out
-    assert '[guard]' in out and 'chain_to = "~/.local/share/llmpro/hooks"' in out
+    assert '[guard]' in out and 'chain_to = "~/data/llmpro/hooks"' in out
+    assert '~/.config/gitpro.toml does not exist' in out
     assert not (machine / '.config' / 'gitpro.toml').exists()
+    assert 'then run llmpro setup again (it runs gitpro setup for you)' in out and 'run gitpro setup' not in out
+
+
+def test_apply_says_to_run_llmpro_setup_not_gitpro_setup(guard, store, machine, capsys):
+    guard()
+    assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 0
+    err = capsys.readouterr().err
+    assert 'For you to do by hand:' in err and 'then run llmpro setup again (it runs gitpro setup for you):' in err
+    assert 'run: gitpro setup' not in err
 
 
 def test_item_in_place(guard, store, machine, capsys):
@@ -291,7 +303,7 @@ def test_item_guard_not_installed(guard, store, capsys):
     cli.main(['setup', '-y', '--only', 'secrets', '--store', store])
     capsys.readouterr()
     code, out = dry(store, capsys)
-    assert code == 0 and 'gitpro guard not installed' in out and 'run llmpro setup again after gitpro setup' in out
+    assert code == 0 and 'gitpro guard not installed' in out and 'llmpro setup runs gitpro setup, which installs it' in out
 
 
 def test_item_hidden_without_guard_capability(fake_gitpro, store, machine, capsys):
@@ -307,7 +319,7 @@ def test_setup_writes_script_0755_and_undo_removes_it(guard, store, machine, cap
     script = guard.script
     assert script.read_text() == pushguard.SCRIPT
     assert stat.S_IMODE(script.stat().st_mode) == 0o755
-    assert 'chain_to = "~/.local/share/llmpro/hooks"' in cap.err
+    assert 'chain_to = "~/data/llmpro/hooks"' in cap.err
     assert not (machine / '.config' / 'gitpro.toml').exists()
     undo = cap.out.split('To undo: sh ')[1].split()[0]
     sh('sh', undo)
@@ -331,11 +343,11 @@ def test_uninstall_removes_script_and_undo_puts_it_back(guard, store, machine, c
     cli.main(['setup', '-y', '--only', 'secrets', '--store', store])
     capsys.readouterr()
     assert cli.main(['uninstall', '-n', '--store', store]) == 1
-    assert 'chain_to line in ~/.config/gitpro.toml can go too' in capsys.readouterr().out
+    assert 'points at this folder, but llmpro did not write it; take it out by hand' in capsys.readouterr().out
     assert cli.main(['uninstall', '-y', '--store', store]) == 0
     cap = capsys.readouterr()
     assert not guard.script.exists()
-    assert 'can go too' in cap.err
+    assert 'take it out by hand' in cap.err
     sh('sh', cap.out.split('To undo: sh ')[1].split()[0])
     assert guard.script.read_text() == pushguard.SCRIPT
 
@@ -346,6 +358,163 @@ def test_setup_in_place_still_prints_the_lines_to_add(guard, store, machine, cap
     capsys.readouterr()
     assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 0
     cap = capsys.readouterr()
-    assert 'everything is in place' in cap.out
-    assert 'For you to do by hand:' in cap.err and 'chain_to = "~/.local/share/llmpro/hooks"' in cap.err
+    assert 'everything setup can do is in place' in cap.out
+    assert 'For you to do by hand:' in cap.err and 'chain_to = "~/data/llmpro/hooks"' in cap.err
     assert not (machine / '.config' / 'gitpro.toml').exists()
+
+
+CONFIG = """# my identities
+[default]
+name = "ss"
+email = "ss@example.com"
+
+[[identity]]
+id = "work"
+host = "github.com"
+"""
+DO = ['setup', '-y', '--agent', 'none']
+
+
+def put_config(machine, text=CONFIG):
+    path = machine / '.config' / 'gitpro.toml'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    path.chmod(0o600)
+    return path
+
+
+def undo_of(out):
+    return out.split('To undo: sh ')[1].split()[0]
+
+
+def test_preview_says_it_adds_chain_to_and_rebuilds_the_hooks(guard, store, machine, capsys):
+    guard()
+    put_config(machine)
+    code, out = dry(store, capsys)
+    assert code == 1
+    assert 'add chain_to = "~/data/llmpro/hooks" to the [guard] table of ~/.config/gitpro.toml (a copy is kept)' in out
+    assert 'run gitpro setup -y --agent none, so its hooks run the push guard' in out
+
+
+def test_setup_adds_chain_to_and_rebuilds_gitpro_hooks(guard, store, machine, fake_gitpro, capsys):
+    import tomllib
+    guard()
+    fake_gitpro.answer(DO, '')
+    path = put_config(machine)
+    assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 0
+    cap = capsys.readouterr()
+    text = path.read_text()
+    assert text.startswith(CONFIG) and text.endswith('\n[guard]\nchain_to = "~/data/llmpro/hooks"\n')
+    assert tomllib.loads(text)['guard'] == {'chain_to': '~/data/llmpro/hooks'}
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert (machine / '.config' / 'gitpro.toml.before-llmpro').read_text() == CONFIG
+    assert DO in fake_gitpro.calls()
+    assert 'added chain_to = "~/data/llmpro/hooks" to ~/.config/gitpro.toml' in cap.err
+    assert 'llmpro does not write that file' not in cap.err
+    sh('sh', undo_of(cap.out))
+    assert path.read_text() == CONFIG and not guard.script.exists()
+    assert fake_gitpro.calls().count(DO) == 2
+
+
+def test_a_guard_table_gets_the_line_under_its_header(guard, store, machine, fake_gitpro, capsys):
+    guard()
+    fake_gitpro.answer(DO, '')
+    path = put_config(machine, CONFIG + '\n[guard]\non_mismatch = "warn"\n')
+    assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 0
+    assert path.read_text() == CONFIG + '\n[guard]\nchain_to = "~/data/llmpro/hooks"\non_mismatch = "warn"\n'
+
+
+def test_guard_not_installed_yet_is_done_in_the_same_run(guard, store, machine, fake_gitpro, capsys):
+    guard(installed='none')
+    fake_gitpro.answer(DO, '')
+    path = put_config(machine)
+    assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 0
+    assert 'chain_to = "~/data/llmpro/hooks"' in path.read_text()
+    assert DO in fake_gitpro.calls()
+
+
+def test_a_config_llmpro_cannot_edit_is_left_with_the_lines(guard, store, machine, fake_gitpro, capsys):
+    guard()
+    path = put_config(machine, '[guard\n')
+    code, out = dry(store, capsys)
+    assert ('~/.config/gitpro.toml is not valid TOML' in out and 'llmpro left it. Add these lines to it by hand, '
+            'then run llmpro setup again (it runs gitpro setup for you):' in out)
+    assert '[guard]' in out and 'chain_to = "~/data/llmpro/hooks"' in out
+    assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 0
+    cap = capsys.readouterr()
+    assert path.read_text() == '[guard\n' and DO not in fake_gitpro.calls()
+    assert 'For you to do by hand:' in cap.err and 'is not valid TOML' in cap.err
+
+
+def test_a_hook_folder_others_can_write_is_made_private(guard, store, machine, fake_gitpro, capsys):
+    guard(chain_to=str(guard.script.parent))
+    put_config(machine)
+    guard.script.parent.mkdir(parents=True)
+    guard.script.parent.chmod(0o775)
+    code, out = dry(store, capsys)
+    assert code == 1 and 'chmod go-w ~/data/llmpro/hooks (gitpro refuses a chain_to folder others can write)' in out
+    assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 0
+    assert stat.S_IMODE(guard.script.parent.stat().st_mode) == 0o755
+    sh('sh', undo_of(capsys.readouterr().out))
+    assert stat.S_IMODE(guard.script.parent.stat().st_mode) == 0o775
+
+
+def test_gitpro_rebuild_failure_says_what_next(guard, store, machine, fake_gitpro, capsys):
+    guard()
+    fake_gitpro.answer(DO, '', exit=4)
+    path = put_config(machine)
+    assert cli.main(['setup', '-y', '--only', 'secrets', '--store', store]) == 2
+    err = capsys.readouterr().err
+    assert 'gitpro setup -y --agent none failed with exit status 4; its output above says why' in err
+    assert 'To take back what this run changed instead: sh ' in err
+    assert 'chain_to' in path.read_text()
+
+
+def test_uninstall_takes_out_its_chain_to_line(guard, store, machine, fake_gitpro, capsys):
+    guard(chain_to=str(guard.script.parent))
+    fake_gitpro.answer(DO, '')
+    path = put_config(machine, CONFIG + '\n[guard]\nchain_to = "~/data/llmpro/hooks"\non_mismatch = "warn"\n')
+    cli.main(['setup', '-y', '--only', 'secrets', '--store', store])
+    capsys.readouterr()
+    assert cli.main(['uninstall', '-n', '--store', store]) == 1
+    out = capsys.readouterr().out
+    assert 'take chain_to out of the [guard] table of ~/.config/gitpro.toml and run gitpro setup -y --agent none' in out
+    assert cli.main(['uninstall', '-y', '--store', store]) == 0
+    cap = capsys.readouterr()
+    assert path.read_text() == CONFIG + '\n[guard]\non_mismatch = "warn"\n'
+    sh('sh', undo_of(cap.out))
+    assert 'chain_to = "~/data/llmpro/hooks"' in path.read_text()
+
+
+def test_uninstall_gives_back_the_config_as_it_was(guard, store, machine, fake_gitpro, capsys):
+    guard()
+    fake_gitpro.answer(DO, '')
+    path = put_config(machine, CONFIG)
+    cli.main(['setup', '-y', '--only', 'secrets', '--store', store])
+    assert '[guard]' in path.read_text()
+    guard(chain_to=str(guard.script.parent))
+    cli.main(['uninstall', '-y', '--store', store])
+    capsys.readouterr()
+    assert path.read_text() == CONFIG
+
+
+def test_uninstall_keeps_a_guard_table_with_a_comment(guard, store, machine, fake_gitpro, capsys):
+    guard(chain_to=str(guard.script.parent))
+    fake_gitpro.answer(DO, '')
+    path = put_config(machine, CONFIG + '\n[guard]\n# mine\nchain_to = "~/data/llmpro/hooks"\n')
+    cli.main(['setup', '-y', '--only', 'secrets', '--store', store])
+    cli.main(['uninstall', '-y', '--store', store])
+    capsys.readouterr()
+    assert path.read_text() == CONFIG + '\n[guard]\n# mine\n'
+
+
+def test_uninstall_leaves_a_chain_to_it_did_not_write(guard, store, machine, fake_gitpro, capsys):
+    guard(chain_to=str(guard.script.parent))
+    path = put_config(machine, CONFIG + '\n[guard]\nchain_to = "/elsewhere/../' + str(guard.script.parent) + '"\n')
+    cli.main(['setup', '-y', '--only', 'secrets', '--store', store])
+    capsys.readouterr()
+    before = path.read_text()
+    cli.main(['uninstall', '-y', '--store', store])
+    cap = capsys.readouterr()
+    assert path.read_text() == before
+    assert 'llmpro did not write it; take it out by hand' in cap.err
