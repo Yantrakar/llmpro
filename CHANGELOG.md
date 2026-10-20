@@ -51,9 +51,18 @@ All notable changes to llmpro (developed as agentspro). The format follows
   `local/` or `sessions/`. AGENTS.md and the skill ask for at most one lesson per
   session, and "confounded" rather than a guess. The idea comes from Google Research's
   harness2 (Apache 2.0); no code was copied.
-- `[harness]` in config.toml names the parts of the harness the store holds
-  (instructions, memory, skills; optionally guardrails, subagents, scripts, hooks).
-  `llmpro setup -n` shows which tools get each part. It changes nothing.
+- `[harness]` in config.toml names the seven parts of the harness the store holds:
+  instructions, memory, skills, subagents, hooks, guardrails and scripts.
+  `llmpro setup -n` shows which tools get each part, and `llmpro setup` places them:
+  - it creates a missing part folder with a README;
+  - it links each tool's subagents, hooks and skills folder to the tool's own folder in the
+    store, moving files already there into the store first and leaving a name clash
+    alone;
+  - it puts executable scripts on PATH through `~/.local/bin`;
+  - it installs Claude Code's hooks and guardrails as two plugins from a local
+    marketplace in the store (`llmpro-harness`), with `claude plugin`.
+
+  `llmpro uninstall` replaces each link with a copy and removes the two plugins.
 - Each chat's frontmatter records `harness:`, the store commit current when the chat
   started. `find --json` history hits carry it. The first sync after upgrading adds it to
   every chat whose source is still on the machine: a one-time rewrite of those files.

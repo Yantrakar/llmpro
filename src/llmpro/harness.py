@@ -57,9 +57,9 @@ PLACES = (
     ('hooks', 'copilot-cli', '.copilot/hooks', 'copilot-cli'),
     ('hooks', 'opencode', '.config/opencode/plugins', 'opencode'),
     ('guardrails', 'claude-code', None, 'plugin:harness-guardrails'),
-    ('guardrails', 'codex', None, 'unsupported: Codex loads hooks from one place; put guardrails in hooks/codex/'),
-    ('guardrails', 'copilot-cli', None, 'unsupported: Copilot CLI loads hooks from one place; put guardrails in hooks/copilot-cli/'),
-    ('guardrails', 'opencode', None, 'unsupported: opencode loads hooks from one place; put guardrails in hooks/opencode/'),
+    ('guardrails', 'codex', None, 'unsupported: each loads hooks from one place; put guardrails in hooks/<tool>/'),
+    ('guardrails', 'copilot-cli', None, 'unsupported: each loads hooks from one place; put guardrails in hooks/<tool>/'),
+    ('guardrails', 'opencode', None, 'unsupported: each loads hooks from one place; put guardrails in hooks/<tool>/'),
 )
 
 MARKET = 'llmpro-harness'
@@ -322,10 +322,12 @@ def _probe(store):
     here, elsewhere = False, None
     for m in markets:
         if m.get('name') == MARKET:
-            if isinstance(m.get('path'), str) and _same(m['path'], store):
+            # a directory marketplace names its folder as path or installLocation, depending on the version
+            where = [m[k] for k in ('path', 'installLocation') if isinstance(m.get(k), str)]
+            if any(_same(w, store) for w in where):
                 here = True
             else:
-                elsewhere = m.get('path') or m.get('source') or 'somewhere else'
+                elsewhere = (where or [None])[0] or str(m.get('source') or 'somewhere else')
     return {'state': 'ok', 'exe': exe, 'here': here, 'elsewhere': elsewhere,
             'plugins': {e.get('id'): bool(e.get('enabled')) for e in plugins}}
 
@@ -456,10 +458,13 @@ def survey_part(store, part, path):
                 todo.append(f'link {_setup.tilde(_setup.under_home(os.path.join(BIN, name)))} -> '
                             f'{_setup.tilde(os.path.join(part_dir(store, "scripts"), name))}')
         return ', '.join(bits), notes, todo, missing
-    cells = []
+    cells, unsupported = [], {}  # reason -> tools, shown once after the other cells
     for _, tool, place, target in rows(part):
         st, detail = state(store, part, tool)
-        cells.append(f'{tool} unsupported ({detail})' if st == 'unsupported' else f'{tool} {st}')
+        if st == 'unsupported':
+            unsupported.setdefault(detail, []).append(tool)
+        else:
+            cells.append(f'{tool} {st}')
         if st in ('clash', 'linked elsewhere', 'unknown', 'disabled'):
             notes.append(f'  {tool} {part} {st}: {detail}')
         elif st == 'missing' and target.startswith('plugin:'):
@@ -475,6 +480,7 @@ def survey_part(store, part, path):
                     more = f' (moves its {n} file{"" if n == 1 else "s"} into the store first)' if os.path.isdir(p) \
                         else ' (moves its file into the store first)'
             todo.append(f'link {_setup.tilde(p)} -> {_setup.tilde(t)}{more}')
+    cells += [f'{", ".join(tools_)} unsupported ({reason})' for reason, tools_ in unsupported.items()]
     return ', '.join(cells), notes, todo, missing
 
 

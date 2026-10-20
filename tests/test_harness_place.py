@@ -197,7 +197,8 @@ def test_codex_guardrails_go_in_its_hooks_folder(home, store, capsys):
     (home / '.codex').mkdir()
     out = run(['setup', '-n'], capsys)[1]
     assert 'claude-code not here' in line(out, 'hooks')
-    assert 'put guardrails in hooks/codex/' in line(out, 'guardrails')
+    assert ('codex, copilot-cli, opencode unsupported (each loads hooks from one place; put guardrails in hooks/<tool>/)'
+            in line(out, 'guardrails'))
 
 
 def test_scripts(home, store, capsys):

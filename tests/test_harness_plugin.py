@@ -29,7 +29,8 @@ for bad in st.get('garbage', []):
 def save():
     json.dump(st, open(sf, 'w'))
 if argv[:3] == ['plugin', 'marketplace', 'list']:
-    print(json.dumps([{{'name': n, 'source': 'directory', 'path': p}} for n, p in st['markets'].items()]))
+    key = st.get('where_key', 'path')
+    print(json.dumps([{{'name': n, 'source': 'directory', key: p}} for n, p in st['markets'].items()]))
 elif argv[:2] == ['plugin', 'list']:
     print(json.dumps([{{'id': i, 'version': '1.0', 'scope': 'user', 'enabled': e, 'installPath': '/x'}}
                       for i, e in st['plugins'].items()]))
@@ -204,6 +205,14 @@ def test_marketplace_elsewhere(home, store, capsys, claude):
     out = run(['setup', '-n'], capsys)[1]
     assert 'claude-code linked elsewhere' in line(out, 'hooks')
     assert '/somewhere/else' in out and 'claude plugin marketplace remove llmpro-harness' in out
+
+
+def test_marketplace_folder_given_as_install_location(home, store, capsys, claude):
+    settle(home, capsys)
+    claude.set(where_key='installLocation')
+    code, out, _ = run(['setup', '-n'], capsys)
+    assert code == 0, out
+    assert 'claude-code placed' in line(out, 'hooks')
 
 
 def test_disabled_is_not_missing(home, store, capsys, claude):
