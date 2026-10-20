@@ -63,6 +63,8 @@ def build_parser():
     g = f.add_mutually_exclusive_group()
     g.add_argument('--memory', action='store_true', help='memories only')
     g.add_argument('--history', action='store_true', help='conversations only')
+    f.add_argument('--shared-only', action='store_true',
+                   help='leave out local-only chats (the MCP tool always does)')
     f.add_argument('--json', action='store_true', help='result as JSON')
 
     sub.add_parser('mcp', parents=[common], help='serve find, check and sync_status to assistants over stdio (MCP)')
@@ -178,7 +180,8 @@ def run(argv):
         history = not args.memory
         memory = not args.history
         return find.run(store, args.query, machine=args.machine, tool=args.tool, since=args.since,
-                        history=history, memory=memory, as_json=args.json, verbose=getattr(args, 'verbose', False))
+                        history=history, memory=memory, as_json=args.json, verbose=getattr(args, 'verbose', False),
+                        shared_only=args.shared_only)
     if args.cmd == 'mcp':
         from . import mcp
         return mcp.serve(store)

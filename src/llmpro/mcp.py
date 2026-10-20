@@ -3,8 +3,10 @@
 Tools: find, check (read-only, never --fix) and sync_status (sync -n). Each runs the command of the same name in
 a child process with --json and returns its output as text, so the terminal and the assistants see the same thing.
 When something needs doing, the output says which command the person runs.
+The find tool always passes --shared-only and a last gate drops any hit under local/ or sessions/.
 """
 import json
+import os
 import subprocess
 import sys
 
@@ -52,7 +54,7 @@ def command(name, args):
         query = args.get('query')
         if not isinstance(query, list) or not query or not all(isinstance(w, str) and w for w in query):
             raise ValueError('query must be a non-empty list of words')
-        cmd = ['find', '--json']
+        cmd = ['find', '--json', '--shared-only']
         for key in ('machine', 'tool', 'since'):
             if args.get(key):
                 cmd += [f'--{key}', str(args[key])]
@@ -67,6 +69,34 @@ def command(name, args):
     raise KeyError(name)
 
 
+def unsafe(path):
+    """True for a hit path that is not a plain path inside the store, or that is under local/ or sessions/."""
+    if not isinstance(path, str) or os.path.isabs(path) or path.startswith(('/', '\\')):
+        return True
+    parts = path.replace('\\', '/').split('/')
+    return '..' in parts or parts[0] in ('local', 'sessions')
+
+
+def refuse(text):
+    return {'content': [{'type': 'text', 'text': text}], 'isError': True}
+
+
+def gate_find(result):
+    """-> the find result without hits from local/, sessions/ or outside the store; an error if it cannot be checked."""
+    try:
+        body = json.loads(result['content'][0]['text'])
+        hits = body['results']
+        if not isinstance(body, dict) or not isinstance(hits, list):
+            raise ValueError
+    except (ValueError, KeyError, IndexError, TypeError):
+        return refuse('find output could not be checked')
+    kept = [h for h in hits if isinstance(h, dict) and not unsafe(h.get('path'))]
+    if len(kept) != len(hits):
+        body['results'] = kept
+        body['withheld'] = len(hits) - len(kept)
+    return {'content': [{'type': 'text', 'text': json.dumps(body, ensure_ascii=False)}], 'isError': False}
+
+
 def call(store, name, args):
     """-> the result of tools/call."""
     try:
@@ -79,7 +109,8 @@ def call(store, name, args):
                        capture_output=True, text=True, stdin=subprocess.DEVNULL)
     # 0 ok and 1 "problems or nothing found" are answers; 2 is an error
     if r.returncode in (0, 1):
-        return {'content': [{'type': 'text', 'text': r.stdout.strip()}], 'isError': False}
+        result = {'content': [{'type': 'text', 'text': r.stdout.strip()}], 'isError': False}
+        return gate_find(result) if name == 'find' else result
     text = (r.stderr or r.stdout).strip() or f'exit {r.returncode}'
     return {'content': [{'type': 'text', 'text': text}], 'isError': True}
 
