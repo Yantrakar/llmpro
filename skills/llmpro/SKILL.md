@@ -48,6 +48,7 @@ llmpro keeps the chats, memories, instruction files and skills of every AI assis
 
 - The user says "we did this before" or "what did we decide": run `llmpro find`, then open the best match. See [memory](references/memory.md).
 - The user says "remember this": add a memory. See [memory](references/memory.md).
+- You learned a lesson (what worked or failed, and the chats that show it): see Lessons in [memory](references/memory.md).
 - Before you commit in the store, or when the user asks about secrets: see [secrets](references/secrets.md).
 - Before you commit or push in any repo, or when the user asks which identity a repo uses: see [git](references/git.md).
 

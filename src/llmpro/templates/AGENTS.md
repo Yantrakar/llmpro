@@ -24,6 +24,7 @@ Add a memory when you learn something that should outlast this session: a prefer
 - Keep the scope as narrow as the evidence: one remark stays with its project, or with its machine if it is about that machine. A memory goes global only when it repeats or the user states it as a general rule.
 - If the new fact replaces an old one, set `status: superseded` and `superseded_by: <new name>` on the old file.
 - Feedback and project memories carry **Why:** and **How to apply:** lines. Prefer what the user said over what you infer.
+- Write at most one lesson per session, or none. Give `cue`, `evidence` and `confidence` as FORMAT.md says, and say "confounded" rather than guess.
 - Then rebuild the index: `llmpro sync --local`.
 - Use absolute dates.
 

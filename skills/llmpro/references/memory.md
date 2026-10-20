@@ -21,6 +21,38 @@ Add one when you learn something that should outlast the session: a preference o
 6. Use absolute dates.
 7. Never put a secret in a memory.
 
+## Lessons
+
+A feedback or project memory that carries `cue` and `evidence` is a lesson.
+
+- `cue`: one line, the situation in which it applies.
+- `evidence`: the chats that show it, as a path under `history/` or a source id `<tool>:<id>`. Never a path under `local/` or `sessions/`; use the source id.
+- `confidence`: `high` when the user said it or it held in two or more chats, `medium` for one clear chat, `low` otherwise.
+- Write at most one new lesson per session, often none. If two things changed at once and you cannot tell which one helped, write that it is confounded, or write nothing. Do not guess.
+- `llmpro check` fails a lesson that cites a chat that is not there.
+
+Example:
+
+```
+---
+name: run-tests-before-commit
+description: Run the test suite before every commit in the demo project
+type: feedback
+scope: demo
+status: active
+sources: [claude-code:demo/run-tests]
+cue: about to commit in the demo project
+evidence: [history/laptop/claude-code/2026/2026-03-02_fix-build_ab12cd34.md]
+confidence: medium
+created: 2026-03-02
+updated: 2026-03-02
+---
+Run the tests before committing.
+
+**Why:** a commit on 2026-03-02 broke the build.
+**How to apply:** run the suite first; commit only when it passes.
+```
+
 ## The index
 
 `memory/INDEX.md` is generated. After a change, rebuild it with `llmpro check --fix`. Do not edit it by hand.
