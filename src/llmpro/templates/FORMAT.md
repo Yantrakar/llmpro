@@ -37,6 +37,9 @@ scope: global | <project name> | <machine>
 status: active | superseded
 superseded_by: <name>            # only if superseded
 sources: [<tool>:<original id>, ...]
+cue: one line: the situation in which this applies
+evidence: [history/<machine>/<tool>/<YYYY>/<file>.md, <tool>:<original id>, ...]
+confidence: high | medium | low
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
@@ -49,6 +52,15 @@ The fact. For feedback and project, add **Why:** and **How to apply:** lines. Li
 - reference: pointers to outside resources.
 
 Scope `<machine>` is for facts about one machine (its paths, its services). INDEX.md has one section per scope.
+
+Lessons: a feedback or project memory that carries `cue` and `evidence` is a lesson. `cue`, `evidence` and `confidence` are optional, and imported tool memories have none.
+
+- Evidence names the chats that show the lesson: a path under `history/`, or a source id `<tool>:<id>`. Never a path under `local/` or `sessions/`, because those names would leave the machine; use the source id instead.
+- `confidence` is high when the user said it or it held in two or more chats, medium for one clear chat, and low otherwise.
+- Write at most one new lesson per session, and often none. If two things changed at once and you cannot tell which one helped, write that it is confounded, or write nothing. Do not guess.
+- `llmpro check` fails a lesson whose evidence is missing or points into `local/` or `sessions/`.
+
+The lesson fields follow the experience notes of Google Research's harness2 (Apache 2.0); no code was copied.
 
 Before adding a memory, look for one on the same thing and update it instead. When two facts conflict, the newer one wins and the older one gets `status: superseded` and `superseded_by`. Superseded files stay but drop out of INDEX.md. Never store secrets.
 

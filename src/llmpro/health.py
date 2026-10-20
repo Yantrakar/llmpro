@@ -5,12 +5,15 @@ manifest.jsonl does not list. Only the index can be fixed by the tool.
 """
 import glob
 import os
+import re
 
 from .importer import memory
 from .redact import load_manifest, read_frontmatter, write_text
 
 REQUIRED = ('name', 'description', 'type', 'scope')
 TYPES = ('user', 'feedback', 'project', 'reference')
+CONFIDENCE = ('high', 'medium', 'low')
+SOURCE_ID = re.compile(r'^[a-z][a-z0-9-]*:\S+$')
 SHOW = 5  # files named per kind of problem
 
 
@@ -40,9 +43,27 @@ def named(rels):
     return ', '.join(rels[:SHOW]) + (f' and {len(rels) - SHOW} more' if len(rels) > SHOW else '')
 
 
+def evidence_faults(store, f):
+    """-> what is wrong with a memory's evidence and confidence, as short phrases; [] if nothing."""
+    out = []
+    ev = f.get('evidence')
+    if ev not in (None, '', []):
+        for e in ev if isinstance(ev, list) else [ev]:
+            if e.startswith(('local/', 'sessions/')) or e.startswith('/') or '..' in e:
+                out.append(f'{e} may not be cited')
+            elif e.startswith('history/'):
+                if not os.path.isfile(os.path.join(store, e)):
+                    out.append(f'{e} does not exist')
+            elif not SOURCE_ID.match(e):
+                out.append(f'{e} is not a history path or a source id')
+    if f.get('confidence') not in (None, '') + CONFIDENCE:
+        out.append(f'confidence {f["confidence"]} is not high, medium or low')
+    return out
+
+
 def problems(store):
     """-> [one line per kind of problem], empty when the store is healthy. Reads only."""
-    out = []
+    out, wrong = [], {}
     mem = os.path.join(store, 'memory')
     if os.path.isdir(mem):
         path = os.path.join(mem, 'INDEX.md')
@@ -56,9 +77,15 @@ def problems(store):
             f, _ = read_frontmatter(p)
             if any(not f.get(k) for k in REQUIRED) or f.get('type') not in TYPES:
                 bad.append(os.path.relpath(p, store))
+            why = evidence_faults(store, f)
+            if why:
+                wrong[os.path.relpath(p, store)] = why
         if bad:
             out.append(f'{len(bad)} memories lack required frontmatter ({", ".join(REQUIRED)}; type one of '
                        f'{"|".join(TYPES)}): {named(bad)}')
+    if wrong:
+        what = '; '.join(sorted({w for v in wrong.values() for w in v}))
+        out.append(f'{len(wrong)} memories cite evidence that is wrong ({what}): {named(wrong)}')
     listed = {e['output'] for e in load_manifest(store).values() if e.get('output')}
     missing = [r for r in history_files(store) if r not in listed]
     if missing:

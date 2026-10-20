@@ -8,7 +8,8 @@ Renames and scopes chosen by hand live in the store's .agentspro/memory_override
 tools/memory_overrides.json while the store still has it):
   {"rename": {"<default name>": "<name>"}, "scope": {"<tool>:<original id>": "<scope>"}, "type": {...}}
 
-A memory already in the store keeps any fields edited there (scope, status, superseded_by, body)
+A memory already in the store keeps any fields edited there (scope, status, superseded_by, cue, evidence,
+confidence, body)
 unless the source changed since it was last imported. Even then, anything below the STORE_MARK line
 (facts merged in from conversations) is kept. Hand-written memories (no tool source) are never touched.
 """
@@ -133,6 +134,21 @@ def convert_copilot(scope, oid, path, name, overrides):
     }, redact(body.strip()) + '\n'
 
 
+def lesson_fields(fields):
+    """cue, evidence and confidence of a source memory. A local/ or sessions/ entry would name a file that
+    never leaves the machine, so it is dropped."""
+    out = {}
+    if fields.get('cue'):
+        out['cue'] = redact(fields['cue'])
+    ev = fields.get('evidence') or []
+    ev = [e for e in (ev if isinstance(ev, list) else [ev]) if not e.startswith(('local/', 'sessions/'))]
+    if ev:
+        out['evidence'] = ev
+    if fields.get('confidence'):
+        out['confidence'] = fields['confidence']
+    return out
+
+
 def convert_claude(slug, stem, path, name_map, overrides):
     fields, body = read_frontmatter(path)
     mtime = datetime.datetime.fromtimestamp(os.path.getmtime(path)).astimezone()
@@ -149,6 +165,7 @@ def convert_claude(slug, stem, path, name_map, overrides):
     body = re.sub(r'\[\[([^\]]+)\]\]', relink, body)
     desc = re.sub(r'\[\[([^\]]+)\]\]', relink, fields.get('description', ''))
     return {
+        **lesson_fields(fields),
         'name': name_map[stem],
         'description': redact(desc),
         'type': mtype,
@@ -163,7 +180,8 @@ def convert_claude(slug, stem, path, name_map, overrides):
 def write_memory(store, fields, body):
     """store: the store, or its local/ folder for a local-only project's memory."""
     path = os.path.join(store, 'memory', fields['name'] + '.md')
-    order = ['name', 'description', 'type', 'scope', 'status', 'superseded_by', 'sources', 'created', 'updated']
+    order = ['name', 'description', 'type', 'scope', 'status', 'superseded_by', 'sources', 'cue', 'evidence', 'confidence',
+             'created', 'updated']
     fm = {k: fields[k] for k in order if fields.get(k) not in (None, '', [])}
     text = frontmatter(fm) + '\n' + body
     if not os.path.exists(path) or open(path, encoding='utf-8').read() != text:
@@ -248,7 +266,7 @@ def run(store, only=None, index_only=False):
             fields, body = convert_copilot(extra, oid, path, name, overrides)
         if os.path.exists(out):
             old, _ = read_frontmatter(out)
-            for k in ('scope', 'status', 'superseded_by', 'created'):
+            for k in ('scope', 'status', 'superseded_by', 'created', 'cue', 'evidence', 'confidence'):
                 if old.get(k):
                     fields[k] = old[k]
             srcs = old.get('sources') or []
