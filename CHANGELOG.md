@@ -46,9 +46,28 @@ All notable changes to llmpro (developed as agentspro). The format follows
 - A Claude Code plugin in this repo, with the skill, the MCP server and a hook before each
   Bash call that asks gitpro (when it can) whether the git identity is right. Install it
   with `/plugin marketplace add Yantrakar/llmpro`, then `/plugin install llmpro@llmpro`.
+- Lessons: a feedback or project memory may carry `cue`, `evidence` and `confidence`.
+  `llmpro check` fails a lesson that cites a chat that is not there, or a file under
+  `local/` or `sessions/`. AGENTS.md and the skill ask for at most one lesson per
+  session, and "confounded" rather than a guess. The idea comes from Google Research's
+  harness2 (Apache 2.0); no code was copied.
+- `[harness]` in config.toml names the parts of the harness the store holds
+  (instructions, memory, skills; optionally guardrails, subagents, scripts, hooks).
+  `llmpro setup -n` shows which tools get each part. It changes nothing.
+- Each chat's frontmatter records `harness:`, the store commit current when the chat
+  started. `find --json` history hits carry it. The first sync after upgrading adds it to
+  every chat whose source is still on the machine: a one-time rewrite of those files.
+- `llmpro find --shared-only` leaves out local-only chats.
 
 ### Changed
 
+- The MCP `find` tool never returns local-only content: it always passes
+  `--shared-only`, and a last check drops any hit under `local/` or `sessions/` (it
+  says how many with `withheld`). `llmpro find` at the terminal still searches them.
+- Every `llmpro sync` failure says what failed, what state the store is in, and what to
+  run next. The desktop notice carries the whole message, under the app name llmpro.
+- Tests no longer pop up desktop notices: `notify-send` is found like every other
+  outside program.
 - The project is now called llmpro, and so is the command. There is no `agentspro`
   command any more. Coming from agentspro: install llmpro, run `llmpro setup` (it
   rewrites the store's hooks and merge driver that still call `agentspro`), then
