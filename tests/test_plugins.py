@@ -108,7 +108,8 @@ def test_run_json_returns_a_failing_exit_with_its_json(fake_gitpro):
 
 def test_run_json_with_text_raises(fake_gitpro):
     fake_gitpro.answer(['why'], 'not json at all')
-    with pytest.raises(gitpro.GitproError):
+    with pytest.raises(gitpro.GitproError, match='gitpro why did not print JSON; run it yourself to see what it printed, '
+                                                 'and pipx upgrade gitpro if it is older than 0.4.0'):
         gitpro.get().run_json(['why'])
     fake_gitpro.answer(['list'], [1, 2])
     with pytest.raises(gitpro.GitproError):
@@ -117,12 +118,13 @@ def test_run_json_with_text_raises(fake_gitpro):
 
 def test_run_json_times_out(fake_gitpro):
     fake_gitpro.answer(['slow'], {'ok': True}, sleep=5)
-    with pytest.raises(gitpro.GitproError, match='timed out'):
+    with pytest.raises(gitpro.GitproError, match='gitpro slow timed out after 0.3 s; run it yourself to see where it stops'):
         gitpro.get().run_json(['slow'], timeout=0.3)
 
 
 def test_run_json_without_gitpro_raises():
-    with pytest.raises(gitpro.GitproError):
+    with pytest.raises(gitpro.GitproError, match='gitpro is not installed; install it with pipx install gitpro, '
+                                                 'or set LLMPRO_GITPRO to its path'):
         gitpro.get().run_json(['why'])
 
 

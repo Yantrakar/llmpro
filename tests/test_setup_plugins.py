@@ -114,7 +114,8 @@ def test_gitpro_apply_failure_is_a_setup_error(machine, store, fake_gitpro, caps
     fake_gitpro.answer(SETUP_ARGV, pending(('hooks', 'x')), exit=1)
     fake_gitpro.answer(APPLY_ARGV, '', exit=3)
     code, out, err = run(['--store', store, 'setup', '-y', '--only', 'git'], capsys)
-    assert code == 2 and 'gitpro setup failed (exit 3); see its output above' in err
+    assert code == 2 and 'gitpro setup failed with exit status 3; its output above says why.' in err
+    assert 'then run llmpro setup again; it does only what is still missing.' in err
     assert 'gitpro uninstall' not in out
 
 

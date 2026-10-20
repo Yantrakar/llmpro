@@ -152,6 +152,7 @@ class Item:
         self.name, self.missing, self.state = name, missing, state
         self.details, self.todo = list(details), list(todo)
         self.plugin = None  # the name of the plugin that owns this item
+        self.left = []  # what setup leaves for the person, each with its next step (a clash, a broken file)
         self.owner = None  # the plugins.base.SetupItem that applies it
 
 
@@ -168,12 +169,26 @@ def store_state(store):
     return 'foreign'
 
 
+def not_a_store(store):
+    t = tilde(store)
+    return (f'{t} exists and is not empty, but has no .git and config.toml, so it is not a store; llmpro changed '
+            f'nothing there. Move it (mv {t} {t}.old) or choose another folder with --store PATH, then run llmpro setup')
+
+
+def busy_message(busy, command):
+    one = len(busy) == 1
+    names = busy[0] if one else ', '.join(busy[:-1]) + ' and ' + busy[-1]
+    return (f'{names} {"is" if one else "are"} running, and {command} would move {"its" if one else "their"} session '
+            f'folders while {"it writes" if one else "they write"} to them. Nothing was changed. '
+            f'Close {"it" if one else "them"}, then run llmpro {command} again')
+
+
 def survey_store(store, hub):
     st = store_state(store)
     if st == 'present':
         return Item('store', False, 'present', [tilde(store)])
     if st == 'foreign':
-        return Item('store', True, 'missing', [f'{tilde(store)} exists but is not a store (no .git or config.toml); move it away'],
+        return Item('store', True, 'missing', [not_a_store(store)],
                     [f'cannot use {tilde(store)}: it exists and is not a store'])
     if hub:
         return Item('store', True, 'missing', [f'no store at {tilde(store)}'], [f'clone {hub} to {tilde(store)}'])
@@ -184,14 +199,19 @@ def survey_store(store, hub):
 def apply_store(store, hub, undo):
     st = store_state(store)
     if st == 'foreign':
-        raise SetupError(f'{store} exists and is not a store; move it away or use --store')
+        raise SetupError(not_a_store(store))
     if hub:
         os.makedirs(os.path.dirname(store), exist_ok=True)
         r = subprocess.run(['git', 'clone', '-o', 'hub', hub, store])  # may ask for the ssh password, once
         if r.returncode != 0:
-            raise SetupError(f'git clone {hub} failed')
+            raise SetupError(f'git clone {hub} failed with exit status {r.returncode} (its message is above). Check the '
+                             f'hub address and that you can reach it (git ls-remote {hub}), then run llmpro setup '
+                             f'--hub {hub} again')
         if store_state(store) != 'present':
-            raise SetupError(f'{hub} did not give a store (no config.toml)')
+            t = tilde(store)
+            raise SetupError(f'{hub} was cloned to {t}, but it has no config.toml, so it is not an llmpro store. The '
+                             f'clone is left there. Check the hub address, move the clone away (mv {t} {t}.old), then '
+                             f'run llmpro setup --hub HUB again')
         undo.note(f'the store {store} was cloned from {hub}; it is kept (delete it by hand if you want it gone)')
         return
     os.makedirs(store, exist_ok=True)
@@ -201,7 +221,9 @@ def apply_store(store, hub, undo):
             shutil.copyfile(src, os.path.join(store, name))
     r = subprocess.run(['git', 'init', '-q', store])
     if r.returncode != 0:
-        raise SetupError(f'git init {store} failed')
+        raise SetupError(f'git init {tilde(store)} failed with exit status {r.returncode} (its message is above); the '
+                         f'template files are already in that folder. Check that you can write there, then run '
+                         f'llmpro setup')
     undo.note(f'the store {store} was created; it is kept (delete it by hand if you want it gone)')
 
 
@@ -210,7 +232,10 @@ def apply_store(store, hub, undo):
 def check_toplevel(store):
     top = subprocess.run(['git', '-C', store, 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
     if top.returncode != 0 or os.path.realpath(top.stdout.strip()) != os.path.realpath(store):
-        raise SetupError(f'{store} is not the top of a git repository; not touching git settings there')
+        t = tilde(store)
+        raise SetupError(f'{t} is not the top of its own git repository, so llmpro does not change git settings there. '
+                         f'Run git init {t} if it should be one, or point --store at the top folder of the store, '
+                         f'then run llmpro setup')
 
 
 def config_get(store, key):
@@ -345,9 +370,11 @@ def survey_sessions(store):
 def check_can_move(store):
     busy = running_tools()
     if busy:
-        raise SetupError('close these first, then run again: ' + ' '.join(busy))
+        raise SetupError(busy_message(busy, 'setup'))
     if subprocess.run(['git', '-C', store, 'check-ignore', '-q', 'sessions/x/y'], capture_output=True).returncode != 0:
-        raise SetupError(f'/sessions/ is not git-ignored in {store}; refusing to move raw logs into a store that would commit them')
+        gi = tilde(os.path.join(store, '.gitignore'))
+        raise SetupError(f'{gi} does not ignore /sessions/, so the raw logs setup would move there could be committed; '
+                         f'llmpro does not move them. Add the line /sessions/ to {gi}, then run llmpro setup')
 
 
 def apply_sessions(store, undo):
@@ -482,7 +509,9 @@ def survey_harness(store):
     missing = missing or m
     notes = list(dict.fromkeys(notes))
     todo = sorted(dict.fromkeys(todo), key=harness_step)  # the order harness.apply does them in
-    return Item('harness', missing, 'missing' if missing else 'present', details + notes, todo)
+    item = Item('harness', missing, 'missing' if missing else 'present', details + notes, todo)
+    item.left = [n.strip() for n in notes if ' disabled: ' not in n]  # a plugin turned off is the person's choice
+    return item
 
 
 # ---------------------------------------------------------------- setup
@@ -563,6 +592,22 @@ def finish(undo, kind):
     return path
 
 
+def stopped(exc, path, command):
+    """The message for a run that failed half way: what failed, what state it left, and what to do next."""
+    what = str(exc).rstrip('.') + '.'
+    told = f'then run llmpro {command}' in what
+    if not path:
+        if told:
+            return f'{what}\n  llmpro had changed nothing before this step.'
+        return (f'{what}\n  llmpro had changed nothing before this step. Fix the cause, then run llmpro {command} '
+                f'again; it does only what is still missing.')
+    nxt = (f'Next: do what the message says; llmpro {command} again does only what is still missing.' if told else
+           f'Next: fix the cause (run the command yourself to see its whole message), then run llmpro {command} '
+           f'again; it does only what is still missing.')
+    return (f'{what}\n  It stopped there. The lines above show what it changed before that; the steps after it were '
+            f'not done.\n  {nxt} To take back what this run changed instead: sh {path}')
+
+
 def item_json(i):
     d = {'name': i.name, 'present': not i.missing, 'details': i.details}
     if i.plugin:
@@ -574,6 +619,7 @@ def yours(items):
     """At the end of setup: what an item that is in place still leaves for the person to do by hand, such as a
     line for a file llmpro never writes (gitpro.toml)."""
     lines = [f'  [{i.name}] {line}' for i in items if not i.missing for line in i.todo]
+    lines += [f'  [{i.name}] {line}' for i in items for line in i.left]
     if lines:
         print('For you to do by hand:', file=sys.stderr)
         print('\n'.join(lines), file=sys.stderr)
@@ -595,7 +641,10 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False,
                 print('\n'.join(render(items)))
             return 1 if missing else 0
         if not missing:
-            print('llmpro setup: everything is in place')
+            if any(i.left for i in items):
+                print('llmpro setup: everything setup can do is in place')
+            else:
+                print('llmpro setup: everything is in place')
             yours(items)
             return 0
         if core and items[0].todo and items[0].todo[0].startswith('cannot use'):
@@ -609,11 +658,11 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False,
         if any(i.name == 'session folders' for i in missing):
             busy = running_tools()
             if busy:
-                raise SetupError('close these first, then run again: ' + ' '.join(busy))
+                raise SetupError(busy_message(busy, 'setup'))
         if not consent('setup', yes):
             print('Nothing changed.', file=sys.stderr)
             return 1
-        undo = Undo()
+        undo, failed = Undo(), None
         try:
             if core:
                 if items[0].missing:
@@ -632,8 +681,12 @@ def setup(store, dry_run=False, yes=False, hub=None, as_json=False, quiet=False,
             for it in missing:
                 if it.owner is not None:
                     it.owner.apply(ctx, undo)
+        except SetupError as exc:
+            failed = exc
         finally:
-            finish(undo, 'setup')
+            path = finish(undo, 'setup')
+        if failed:
+            raise SetupError(stopped(failed, path, 'setup'))
         print('llmpro setup: done', file=sys.stderr)
         yours(items)
         return 0
@@ -718,11 +771,11 @@ def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
         if sessions:
             busy = running_tools()
             if busy:
-                raise SetupError('close these first, then run again: ' + ' '.join(busy))
+                raise SetupError(busy_message(busy, 'uninstall'))
         if not consent('uninstall', yes):
             print('Nothing changed.', file=sys.stderr)
             return 1
-        undo = Undo()
+        undo, failed = Undo(), None
         try:
             for name, si in owned:
                 for line in si.remove(ctx, undo):
@@ -760,8 +813,12 @@ def uninstall(store, dry_run=False, yes=False, as_json=False, quiet=False):
                 harness.replace_with_copy(place, undo)
             if plugin_ids or market:
                 harness.remove_plugins(store, exe, plugin_ids, market, undo)
+        except SetupError as exc:
+            failed = exc
         finally:
-            finish(undo, 'uninstall')
+            path = finish(undo, 'uninstall')
+        if failed:
+            raise SetupError(stopped(failed, path, 'uninstall'))
         print('llmpro uninstall: done; the store is kept', file=sys.stderr)
         return 0
     except SetupError as exc:

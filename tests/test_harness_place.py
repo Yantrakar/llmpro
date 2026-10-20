@@ -122,10 +122,14 @@ def test_name_on_both_sides_is_a_clash(home, store, capsys):
     put(Path(store) / 'agents/claude-code/a.md', 'store\n')
     code, out, _ = run(['setup', '-n'], capsys)
     assert 'claude-code clash' in line(out, 'subagents')
-    assert 'merge ~/.claude/agents/a.md into' in out and 'agents/claude-code/a.md by hand, then run llmpro setup' in out
+    assert ('~/.claude/agents and ~/.agents/agents/claude-code both hold a.md; llmpro moved nothing.' in out
+            and 'diff -r ~/.claude/agents ~/.agents/agents/claude-code' in out
+            and 'merge each into ~/.agents/agents/claude-code by hand, remove it from ~/.claude/agents, then run llmpro setup' in out)
     assert harness.state(store, 'subagents', 'claude-code')[0] == 'clash'
     code, out, err = run(['setup', '-y'], capsys)
     assert code == 0
+    left = err[err.index('For you to do by hand:'):]
+    assert '[harness] claude-code subagents clash: ~/.claude/agents and ~/.agents/agents/claude-code both hold a.md' in left
     assert (home / '.claude/agents/a.md').read_text() == 'mine\n'
     assert not os.path.islink(home / '.claude/agents')
     assert open(os.path.join(store, 'agents/claude-code/a.md')).read() == 'store\n'
@@ -139,10 +143,38 @@ def test_link_elsewhere_is_left_alone(home, store, tmp_path, capsys):
     os.symlink(other, home / '.claude/agents')
     code, out, _ = run(['setup', '-n'], capsys)
     assert 'claude-code linked elsewhere' in line(out, 'subagents')
-    assert 'llmpro leaves it; remove the link to let setup place it' in out and str(other) in out
-    assert run(['setup', '-y'], capsys)[0] == 0
+    assert f'~/.claude/agents is a link to {other}, not to the store; llmpro left it.' in out
+    assert (f'To use ~/.agents/agents/claude-code instead: copy what you want to keep from {other} into it, '
+            'rm ~/.claude/agents (only the link goes), then run llmpro setup') in out
+    code, _, err = run(['setup', '-y'], capsys)
+    assert code == 0 and 'For you to do by hand:' in err and 'rm ~/.claude/agents (only the link goes)' in err
     assert os.readlink(home / '.claude/agents') == str(other)
     assert run(['setup', '-n'], capsys)[0] == 0
+
+
+def test_file_where_a_folder_belongs(home, store, capsys):
+    put(home / '.claude/agents', 'not a folder\n')
+    out = run(['setup', '-n'], capsys)[1]
+    assert 'claude-code clash' in line(out, 'subagents')
+    assert ('~/.claude/agents is a file, but Claude Code reads a folder there; llmpro left it. '
+            'Look at it, mv ~/.claude/agents ~/.claude/agents.old, then run llmpro setup') in out
+
+
+def test_folder_where_a_file_belongs(home, store, capsys):
+    (home / '.codex/hooks.json').mkdir(parents=True)
+    put(Path(store) / 'hooks/codex/hooks.json', '{}\n')
+    out = run(['setup', '-n'], capsys)[1]
+    assert ('~/.codex/hooks.json is a folder, but Codex reads a file there; llmpro left it. '
+            'Look at it, mv ~/.codex/hooks.json ~/.codex/hooks.json.old, then run llmpro setup') in out
+
+
+def test_file_on_both_sides(home, store, capsys):
+    put(home / '.codex/hooks.json', '{"mine": 1}\n')
+    put(Path(store) / 'hooks/codex/hooks.json', '{}\n')
+    out = run(['setup', '-n'], capsys)[1]
+    assert ('~/.codex/hooks.json and ~/.agents/hooks/codex/hooks.json both exist; llmpro changed neither. '
+            'Compare them (diff ~/.codex/hooks.json ~/.agents/hooks/codex/hooks.json), merge into '
+            '~/.agents/hooks/codex/hooks.json by hand, rm ~/.codex/hooks.json, then run llmpro setup') in out
 
 
 def test_codex_hooks_file(home, store, capsys):
@@ -211,9 +243,15 @@ def test_scripts(home, store, capsys):
     assert code == 1
     got = line(out, 'scripts')
     assert '1 missing (hello)' in got and '1 not executable (plain)' in got and '1 clash (taken)' in got
-    assert 'chmod +x' in out
+    assert ('scripts plain not executable: ~/.agents/scripts/plain is not executable, so it is not on PATH yet. '
+            'chmod +x ~/.agents/scripts/plain, then run llmpro setup') in out
+    assert ('scripts taken clash: ~/.local/bin/taken is already a file, not a link to the store; llmpro left both. '
+            'Rename ~/.agents/scripts/taken (setup links it under the new name), or rm ~/.local/bin/taken '
+            'if you no longer need it, then run llmpro setup') in out
     code, out, err = run(['setup', '-y'], capsys)
     assert code == 0, err
+    left = err[err.index('For you to do by hand:'):]
+    assert 'chmod +x ~/.agents/scripts/plain' in left and 'Rename ~/.agents/scripts/taken' in left
     link = home / '.local/bin/hello'
     assert os.path.islink(link) and os.path.realpath(link) == os.path.realpath(s / 'hello')
     assert (home / '.local/bin/taken').read_text() == 'mine\n' and not os.path.islink(home / '.local/bin/taken')

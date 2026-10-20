@@ -33,7 +33,9 @@ from . import setup as _setup, store as cfg, tools
 #               opencode     opencode.ai/docs/agents (~/.config/opencode/agents/*.md)
 #   hooks       claude-code  code.claude.com/docs/en/plugins/loading, /plugins/create-marketplace and
 #                            /plugins/cli-reference: hooks come from a plugin. A local-path marketplace with
-#                            relative plugin sources is loaded in place. `claude plugin marketplace list --json`
+#                            relative plugin sources is read in place: claude also copies it to
+#                            ~/.claude/plugins/cache, but list shows readFromFolder and an edit in the store
+#                            shows without a reinstall (seen 2026-10-20). `claude plugin marketplace list --json`
 #                            and `claude plugin list --json` give JSON arrays; list entries have id, version,
 #                            scope, enabled, installPath; marketplace entries have name, source, path.
 #                            The target 'plugin:<name>' means the store's plugin of that name (see PLUGINS).
@@ -74,6 +76,7 @@ MARKET_FILE = '.claude-plugin/marketplace.json'
 PLACED_PARTS = ('skills', 'subagents', 'hooks', 'guardrails', 'scripts')
 NEVER_CREATED = ('instructions', 'memory')  # the store already has these
 BIN = '.local/bin'
+TOOL_NAMES = {'claude-code': 'Claude Code', 'codex': 'Codex', 'copilot-cli': 'Copilot CLI', 'opencode': 'opencode'}
 
 _WHERE = {
     'skills': ('Skills: one folder per skill, each with a SKILL.md. This is the only copy.',
@@ -166,23 +169,29 @@ def state(store, part, tool):
     if folder is None or not os.path.isdir(folder):
         return 'not here', ''
     p, t = _setup.under_home(place), _target_path(store, part, target)
+    tp, tt = _setup.tilde(p), _setup.tilde(t)
     if os.path.islink(p):
         if _same(p, t):
             return 'placed', ''
-        where = os.path.realpath(p)
-        return 'linked elsewhere', f'{_setup.tilde(p)} points at {_setup.tilde(where)}; llmpro leaves it; remove the link to let setup place it'
+        where = _setup.tilde(os.path.realpath(p))
+        return 'linked elsewhere', (f'{tp} is a link to {where}, not to the store; llmpro left it. To use {tt} instead: '
+                                    f'copy what you want to keep from {where} into it, rm {tp} (only the link goes), '
+                                    f'then run llmpro setup')
     if os.path.lexists(p):
-        if _is_file(target):
-            if not os.path.isfile(p):
-                return 'clash', f'{_setup.tilde(p)} is a folder, not a file; move it away, then run llmpro setup'
+        kind = 'file' if _is_file(target) else 'folder'
+        if (kind == 'file') != os.path.isfile(p):
+            return 'clash', (f'{tp} is a {"folder" if kind == "file" else "file"}, but {TOOL_NAMES[tool]} reads a {kind} '
+                             f'there; llmpro left it. Look at it, mv {tp} {tp}.old, then run llmpro setup')
+        if kind == 'file':
             if os.path.lexists(t):
-                return 'clash', f'merge {_setup.tilde(p)} into {_setup.tilde(t)} by hand, then run llmpro setup'
+                return 'clash', (f'{tp} and {tt} both exist; llmpro changed neither. Compare them (diff {tp} {tt}), '
+                                 f'merge into {tt} by hand, rm {tp}, then run llmpro setup')
             return 'missing', ''
-        if not os.path.isdir(p):
-            return 'clash', f'{_setup.tilde(p)} is a file, not a folder; move it away, then run llmpro setup'
         both = sorted(_names(p) & _names(t))
         if both:
-            return 'clash', '; '.join(f'merge {_setup.tilde(p)}/{n} into {_setup.tilde(t)}/{n} by hand, then run llmpro setup' for n in both)
+            return 'clash', (f'{tp} and {tt} both hold {", ".join(both)}; llmpro moved nothing. Compare them '
+                             f'(diff -r {tp} {tt}), merge each into {tt} by hand, remove it from {tp}, '
+                             f'then run llmpro setup')
         return 'missing', ''
     if _is_file(target) and not os.path.lexists(t):
         return 'nothing yet', ''
@@ -205,9 +214,16 @@ def script_states(store):
         if os.path.islink(dest) and _same(dest, src):
             out.append((name, 'placed', ''))
         elif os.path.lexists(dest):
-            out.append((name, 'clash', f'{_setup.tilde(dest)} is taken by something else; move it away or rename the script, then run llmpro setup'))
+            what = (f'a link to {_setup.tilde(os.path.realpath(dest))}' if os.path.islink(dest)
+                    else 'a folder' if os.path.isdir(dest) else 'a file')
+            d, s_ = _setup.tilde(dest), _setup.tilde(src)
+            out.append((name, 'clash', f'{d} is already {what}, not a link to the store; llmpro left both. Rename {s_} '
+                                       f'(setup links it under the new name), or rm {d} if you no longer need it, '
+                                       f'then run llmpro setup'))
         elif not os.access(src, os.X_OK):
-            out.append((name, 'not executable', f'chmod +x {_setup.tilde(src)}, then run llmpro setup'))
+            s_ = _setup.tilde(src)
+            out.append((name, 'not executable', f'{s_} is not executable, so it is not on PATH yet. '
+                                                f'chmod +x {s_}, then run llmpro setup'))
         else:
             out.append((name, 'missing', ''))
     return out
@@ -255,21 +271,30 @@ def plugin_files(store):
     return out
 
 
+def _both():
+    return ' and '.join(name for name, _ in PLUGINS.values())
+
+
 def _market_problem(store):
-    """-> None, or what is wrong with an existing marketplace.json."""
+    """-> None, or what is wrong with an existing marketplace.json and what to do about it."""
     path = os.path.join(store, MARKET_FILE)
     if not os.path.isfile(path):
         return None
+    shown = _setup.tilde(path)
+    fresh = f'or rm {shown} to let setup write a fresh one, then run llmpro setup'
     try:
         with open(path, encoding='utf-8') as fh:
             data = json.load(fh)
     except (OSError, ValueError) as exc:
-        return f'{MARKET_FILE} does not parse ({exc}); llmpro leaves it; fix or remove it, then run llmpro setup'
+        return (f'{shown} is not valid JSON ({exc}); llmpro does not overwrite it, so the plugins {_both()} are not '
+                f'installed. Fix the JSON, {fresh}')
     plugins = data.get('plugins') if isinstance(data, dict) else None
     have = {p.get('name') for p in plugins if isinstance(p, dict)} if isinstance(plugins, list) else set()
-    lacks = [PLUGINS[part][0] for part in PLUGINS if PLUGINS[part][0] not in have]
+    lacks = [e for e in _market_json(store)['plugins'] if e['name'] not in have]
     if lacks:
-        return f'{MARKET_FILE} lacks the plugin {" and ".join(lacks)}; llmpro leaves it; add it or remove the file, then run llmpro setup'
+        return (f'{shown} does not list {" and ".join(e["name"] for e in lacks)}; llmpro does not overwrite it, so '
+                f'{"those plugins are" if len(lacks) > 1 else "that plugin is"} not installed. Add '
+                f'{", ".join(json.dumps(e) for e in lacks)} to its "plugins" list, {fresh}')
     return None
 
 
@@ -312,13 +337,19 @@ def _claude_list(exe, args):
 
 def _probe(store):
     exe = tools.which('claude')
-    if not exe or not os.path.isdir(_setup.under_home('.claude')):
+    if not os.path.isdir(_setup.under_home('.claude')):
         return {'state': 'not here'}
+    if not exe:
+        return {'state': 'not here',
+                'detail': f'~/.claude exists, but the claude command is not on PATH, so llmpro cannot install the plugins '
+                          f'{_both()}. Install Claude Code or add its folder to PATH, then run llmpro setup'}
     markets, bad = _claude_list(exe, ['plugin', 'marketplace', 'list', '--json'])
     if bad is None:
         plugins, bad = _claude_list(exe, ['plugin', 'list', '--json'])
     if bad:
-        return {'state': 'unknown', 'detail': bad}
+        return {'state': 'unknown',
+                'detail': f'{bad}. llmpro cannot tell whether the plugins {_both()} are installed, so setup leaves '
+                          f'them. Run that command yourself to see why, fix it, then run llmpro setup'}
     here, elsewhere = False, None
     for m in markets:
         if m.get('name') == MARKET:
@@ -349,13 +380,15 @@ def _plugin_state(store, part, info=None):
     if problem:
         return 'unknown', problem
     if info['elsewhere']:
-        return 'linked elsewhere', (f'the marketplace {MARKET} points at {info["elsewhere"]}; llmpro leaves it; '
-                                    f'run claude plugin marketplace remove {MARKET} to let setup place it')
+        return 'linked elsewhere', (f'the Claude Code marketplace {MARKET} points at {_setup.tilde(info["elsewhere"])}, '
+                                    f'not at this store; llmpro left it. To use this store: claude plugin marketplace '
+                                    f'remove {MARKET} (this also uninstalls the plugins installed from it), then run '
+                                    f'llmpro setup')
     pid = f'{PLUGINS[part][0]}@{MARKET}'
     if info['here'] and pid in info['plugins']:
         if info['plugins'][pid]:
             return 'placed', ''
-        return 'disabled', f'you turned it off; run claude plugin enable {pid} to turn it on'
+        return 'disabled', f'{pid} is installed but turned off; llmpro leaves it off. To turn it on: claude plugin enable {pid}'
     return 'missing', ''
 
 
@@ -367,17 +400,17 @@ def _plugin_todo(store, part):
     return lines
 
 
-def _claude(exe, args, done):
+def _claude(exe, args):
+    """Run a claude command that changes something; a failure stops setup (setup says what was done and what next)."""
     shown = 'claude ' + ' '.join(args)
-    after = (' Already done: ' + '; '.join(done) + '. The undo script covers it.') if done else ' Nothing was changed through claude yet.'
     try:
         r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=CLAUDE_TIMEOUT)
     except subprocess.TimeoutExpired:
-        raise _setup.SetupError(f'`{shown}` did not finish in {CLAUDE_TIMEOUT} s.{after}')
+        raise _setup.SetupError(f'`{shown}` did not finish in {CLAUDE_TIMEOUT} s')
     except OSError as exc:
-        raise _setup.SetupError(f'`{shown}` could not run ({exc.strerror or exc}).{after}')
+        raise _setup.SetupError(f'`{shown}` could not run ({exc.strerror or exc})')
     if r.returncode != 0:
-        raise _setup.SetupError(f'`{shown}` failed with exit status {r.returncode}: {r.stderr.strip() or "no message"}.{after}')
+        raise _setup.SetupError(f'`{shown}` failed with exit status {r.returncode}: {r.stderr.strip() or "no message"}')
     _say('ran', shown)
 
 
@@ -397,16 +430,14 @@ def _apply_plugins(store, undo):
     need = [part for part in PLUGINS if _plugin_state(store, part, info)[0] == 'missing']
     if not need:
         return
-    exe, done = info['exe'], []
+    exe = info['exe']
     if not info['here']:
-        _claude(exe, ['plugin', 'marketplace', 'add', store], done)
+        _claude(exe, ['plugin', 'marketplace', 'add', store])
         undo.run('claude', 'plugin', 'marketplace', 'remove', MARKET)
-        done.append(f'added the marketplace {MARKET}')
     for part in need:
         pid = f'{PLUGINS[part][0]}@{MARKET}'
-        _claude(exe, ['plugin', 'install', pid, '--scope', 'user'], done)
+        _claude(exe, ['plugin', 'install', pid, '--scope', 'user'])
         undo.run('claude', 'plugin', 'uninstall', pid, '--scope', 'user')
-        done.append(f'installed {pid}')
 
 
 def installed_plugins(store):
@@ -419,13 +450,11 @@ def installed_plugins(store):
 
 
 def remove_plugins(store, exe, ids, market, undo):
-    done = []
     for pid in ids:
-        _claude(exe, ['plugin', 'uninstall', pid, '--scope', 'user'], done)
+        _claude(exe, ['plugin', 'uninstall', pid, '--scope', 'user'])
         undo.run('claude', 'plugin', 'install', pid, '--scope', 'user')
-        done.append(f'uninstalled {pid}')
     if market:
-        _claude(exe, ['plugin', 'marketplace', 'remove', MARKET], done)
+        _claude(exe, ['plugin', 'marketplace', 'remove', MARKET])
         undo.run('claude', 'plugin', 'marketplace', 'add', store)
 
 
@@ -465,7 +494,12 @@ def survey_part(store, part, path):
             unsupported.setdefault(detail, []).append(tool)
         else:
             cells.append(f'{tool} {st}')
-        if st in ('clash', 'linked elsewhere', 'unknown', 'disabled'):
+        if target.startswith('plugin:') and detail and detail == _market_problem(store):
+            pass  # survey_files reports the marketplace file once
+        elif target.startswith('plugin:') and detail and st != 'disabled':
+            # one probe answers for both plugins, so the note is the same for hooks and guardrails
+            notes.append(f'  {tool} hooks and guardrails {st}: {detail}')
+        elif st in ('clash', 'linked elsewhere', 'unknown', 'disabled'):
             notes.append(f'  {tool} {part} {st}: {detail}')
         elif st == 'missing' and target.startswith('plugin:'):
             missing = True

@@ -10,6 +10,11 @@ from .plugins.base import Status
 MIN_VERSION = (0, 4, 0)
 
 
+NOT_INSTALLED = 'gitpro is not installed; install it with pipx install gitpro, or set LLMPRO_GITPRO to its path'
+BROKEN = 'check that path (LLMPRO_GITPRO overrides it), or reinstall with pipx install --force gitpro'
+LOOK = 'run it yourself to see what it printed, and pipx upgrade gitpro if it is older than 0.4.0'
+
+
 class GitproError(Exception):
     pass
 
@@ -91,30 +96,31 @@ class Gitpro:
         """-> (exit code, the one JSON object gitpro printed). Raises GitproError if gitpro is missing, times out,
         or does not print one JSON object."""
         if not self.path:
-            raise GitproError('gitpro is not installed')
+            raise GitproError(NOT_INSTALLED)
         try:
             r = subprocess.run([self.path, *args], stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                timeout=timeout, env=self._env())
         except subprocess.TimeoutExpired:
-            raise GitproError(f'gitpro {" ".join(args)} timed out after {timeout:g} s') from None
+            raise GitproError(f'gitpro {" ".join(args)} timed out after {timeout:g} s; '
+                              'run it yourself to see where it stops') from None
         except OSError as exc:
-            raise GitproError(f'gitpro could not be run: {exc}') from None
+            raise GitproError(f'gitpro could not be run: {exc}; {BROKEN}') from None
         try:
             data = json.loads(r.stdout)
         except ValueError:
-            raise GitproError(f'gitpro {" ".join(args)} did not print JSON') from None
+            raise GitproError(f'gitpro {" ".join(args)} did not print JSON; {LOOK}') from None
         if not isinstance(data, dict):
-            raise GitproError(f'gitpro {" ".join(args)} did not print one JSON object')
+            raise GitproError(f'gitpro {" ".join(args)} did not print one JSON object; {LOOK}')
         return r.returncode, data
 
     def run(self, args):
         """Run gitpro with the terminal passed through. -> its exit code."""
         if not self.path:
-            raise GitproError('gitpro is not installed')
+            raise GitproError(NOT_INSTALLED)
         try:
             return subprocess.run([self.path, *args], env=self._env()).returncode
         except OSError as exc:
-            raise GitproError(f'gitpro could not be run: {exc}') from None
+            raise GitproError(f'gitpro could not be run: {exc}; {BROKEN}') from None
 
 
 _cache = []

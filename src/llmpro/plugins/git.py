@@ -53,7 +53,7 @@ class GitproSetup(SetupItem):
         except gitpro.GitproError as exc:
             raise SetupError(str(exc)) from None
         if code != 0:
-            raise SetupError(f'gitpro setup failed (exit {code}); see its output above')
+            raise SetupError(f'gitpro setup failed with exit status {code}; its output above says why')
         undo.note('gitpro setup ran; to take it back run: gitpro uninstall')
 
     def plan_remove(self, ctx):

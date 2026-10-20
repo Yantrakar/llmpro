@@ -75,6 +75,10 @@ All notable changes to llmpro (developed as agentspro). The format follows
   says how many with `withheld`). `llmpro find` at the terminal still searches them.
 - Every `llmpro sync` failure says what failed, what state the store is in, and what to
   run next. The desktop notice carries the whole message, under the app name llmpro.
+- Every `llmpro setup` and `llmpro uninstall` failure says the same: what failed and
+  why, what the run had changed before it stopped (and the undo script for that), and
+  the command to run next. Parts setup leaves alone, such as a name clash or a plugin
+  claude cannot install, are listed under "For you to do by hand".
 - Tests no longer pop up desktop notices: `notify-send` is found like every other
   outside program.
 - The project is now called llmpro, and so is the command. There is no `agentspro`

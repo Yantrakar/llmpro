@@ -159,7 +159,9 @@ def test_refuses_while_a_tool_runs_and_names_it(machine, capsys, monkeypatch, on
     monkeypatch.setattr(setup, 'running_tools', lambda: ['claude', 'code'])
     before = snapshot(machine)
     code, out, err = run(['setup', '-y'], capsys)
-    assert code == 2 and 'claude' in err and 'code' in err
+    assert code == 2
+    assert ('claude and code are running, and setup would move their session folders while they write to them. '
+            'Nothing was changed. Close them, then run llmpro setup again') in err
     assert snapshot(machine) == before and not (machine / '.agents').exists()
 
 
@@ -194,7 +196,10 @@ def test_refuses_to_move_logs_into_a_store_that_does_not_ignore_them(machine, ca
     open(os.path.join(store, '.gitignore'), 'w').write('*.pyc\n')
     before = snapshot(machine)
     code, out, err = run(['setup', '-y', '--store', store], capsys)
-    assert code == 2 and '/sessions/' in err
+    assert code == 2
+    assert ('.gitignore does not ignore /sessions/, so the raw logs setup would move there could be committed; '
+            'llmpro does not move them. Add the line /sessions/ to ') in err
+    assert '.gitignore, then run llmpro setup' in err
     assert snapshot(machine) == before
 
 
@@ -282,8 +287,48 @@ def test_uninstall_refuses_while_a_tool_runs(machine, capsys, monkeypatch, onpat
     monkeypatch.setattr(setup, 'running_tools', lambda: ['codex'])
     before = snapshot(machine)
     code, out, err = run(['uninstall', '-y'], capsys)
-    assert code == 2 and 'codex' in err
+    assert code == 2
+    assert ('codex is running, and uninstall would move its session folders while it writes to them. '
+            'Nothing was changed. Close it, then run llmpro uninstall again') in err
     assert snapshot(machine) == before
+
+
+def test_a_folder_that_is_not_a_store(machine, capsys, onpath, tmp_path):
+    other = tmp_path / 'notes'
+    other.mkdir()
+    (other / 'todo.txt').write_text('x\n')
+    want = (f'{other} exists and is not empty, but has no .git and config.toml, so it is not a store; llmpro changed '
+            f'nothing there. Move it (mv {other} {other}.old) or choose another folder with --store PATH, '
+            'then run llmpro setup')
+    code, out, _ = run(['setup', '-n', '--store', str(other)], capsys)
+    assert want in out
+    code, out, err = run(['setup', '-y', '--store', str(other)], capsys)
+    assert code == 2 and want in err
+    assert os.listdir(other) == ['todo.txt']
+
+
+def test_hub_that_cannot_be_cloned(machine, capsys, onpath, tmp_path):
+    hub, store = tmp_path / 'no-such-hub.git', tmp_path / 'store'
+    code, out, err = run(['setup', '-y', '--store', str(store), '--hub', str(hub)], capsys)
+    assert code == 2
+    assert (f'git clone {hub} failed with exit status 128 (its message is above). Check the hub address and that '
+            f'you can reach it (git ls-remote {hub}), then run llmpro setup --hub {hub} again') in err
+    assert 'llmpro had changed nothing before this step.' in err and not store.exists()
+    assert 'Fix the cause' not in err
+
+
+def test_hub_that_is_not_a_store(machine, capsys, onpath, tmp_path):
+    src, hub, store = tmp_path / 'src', tmp_path / 'hub.git', tmp_path / 'store'
+    subprocess.run(['git', 'init', '-q', str(src)], check=True)
+    (src / 'README').write_text('x\n')
+    subprocess.run(['git', '-C', str(src), 'add', '.'], check=True)
+    subprocess.run(['git', '-C', str(src), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x'], check=True)
+    subprocess.run(['git', 'clone', '-q', '--bare', str(src), str(hub)], check=True)
+    code, out, err = run(['setup', '-y', '--store', str(store), '--hub', str(hub)], capsys)
+    assert code == 2
+    assert (f'{hub} was cloned to {store}, but it has no config.toml, so it is not an llmpro store. The clone is '
+            f'left there. Check the hub address, move the clone away (mv {store} {store}.old), then run llmpro setup '
+            f'--hub HUB again') in err
 
 
 def test_uninstall_with_nothing_to_do(machine, capsys):

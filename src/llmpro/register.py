@@ -26,6 +26,13 @@ OPENCODE_SCHEMA = 'https://opencode.ai/config.json'
 OPENCODE_FILES = ('opencode.json', 'opencode.jsonc')
 
 
+def failed(shown, code, line):
+    """`shown` failed with its exit status and last line; when the code is None the line already says why."""
+    if code is None:
+        return f'{shown} failed: {line}'
+    return f'{shown} failed with exit status {code}' + (f': {line}' if line else '')
+
+
 def run_tool(cmd, timeout=None):
     """Run an outside command with no input, its output captured. -> (exit code, last line of stderr).
     The exit code is None when it timed out or could not be started, and the line says why.
@@ -87,7 +94,7 @@ class McpRegistration(SetupItem):
     def apply(self, ctx, undo):
         code, line = run_tool(self._cmd(*self.add_words()))
         if code != 0:
-            raise SetupError(f'{self._shown(*self.add_words())} failed' + (f': {line}' if line else ''))
+            raise SetupError(failed(self._shown(*self.add_words()), code, line))
         undo.run(self.tool, *self.remove_words())
         print(f'registered llmpro with {self.tool}', file=sys.stderr)
 
@@ -99,7 +106,7 @@ class McpRegistration(SetupItem):
             return []
         code, line = run_tool(self._cmd(*self.remove_words()))
         if code != 0:
-            raise SetupError(f'{self._shown(*self.remove_words())} failed' + (f': {line}' if line else ''))
+            raise SetupError(failed(self._shown(*self.remove_words()), code, line))
         undo.run(self.tool, *self.add_words())
         return [self._shown(*self.remove_words())]
 
