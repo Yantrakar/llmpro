@@ -11,4 +11,4 @@ def test_notify_finds_notify_send_through_tools_which(tmp_path, monkeypatch):
     monkeypatch.setenv('LLMPRO_TOOL_PATH', str(fake.parent))
     sync.notify('boom')
     args = log.read_text().splitlines()
-    assert args[:3] == ['--app-name=llmpro', '--icon=dialog-warning', 'llmpro sync failed'] and args[3] == 'boom'
+    assert args[:3] == ['--app-name=llmpro', '--icon=dialog-warning', 'llmpro sync failed'] and args[3:] == ['boom']

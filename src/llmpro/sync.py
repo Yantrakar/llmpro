@@ -170,7 +170,9 @@ class Hub:
         say(f'logging in to the hub ({self.dest}) for this sync')
         r = subprocess.run(['ssh', '-fN', '-o', 'ControlMaster=yes', '-o', f'ControlPath={self.ctl}/c', self.dest])
         if r.returncode != 0:
-            raise SyncFailed('cannot log in to the hub')
+            raise SyncFailed(f'cannot log in to the hub ({self.dest}; ssh exited {r.returncode}). Nothing was fetched '
+                             f'or pushed, and commits made on this machine are kept. Check that `ssh {self.dest}` '
+                             f'works, then run `llmpro sync` again.')
         os.environ['GIT_SSH_COMMAND'] = f'ssh -o ControlMaster=no -o ControlPath={self.ctl}/c'
 
     def close(self):
@@ -183,11 +185,12 @@ class Hub:
 
 
 def notify(msg):
-    """A desktop notice for a sync that failed with nobody watching the terminal."""
+    """A desktop notice for a sync that failed with nobody watching the terminal. It carries the whole message:
+    what failed, what state the store is in, and what to run next."""
     send = tools.which('notify-send')
     if send:
         subprocess.run([send, '--app-name=llmpro', '--icon=dialog-warning', 'llmpro sync failed',
-                        f'{msg}\nRun llmpro sync in a terminal for details.'], capture_output=True)
+                        msg], capture_output=True)
 
 
 def run(store, local=False, quiet=False):
@@ -207,8 +210,8 @@ def run(store, local=False, quiet=False):
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        print(f'sync: another sync is running in {store}', file=sys.stderr)
-        notify(f'another sync is running in {store}')
+        print(f'sync: another sync is already running in {store}; this one stopped without changing anything', file=sys.stderr)
+        notify(f'another sync is already running in {store}; this one stopped without changing anything.')
         return 1
 
     hub = Hub()
@@ -246,7 +249,7 @@ def report_now_local(outputs, stream=None):
 def _run(store, local, say, hub):
     reason = cfg.privacy_stop_reason()
     if reason:
-        raise SyncFailed(reason)
+        raise SyncFailed(f'{reason} Nothing was imported, committed or sent.')
     repair_git_settings(store)
     url = subprocess.run(['git', '-C', store, 'remote', 'get-url', 'hub'], capture_output=True, text=True)
     if not local and url.returncode == 0:
@@ -259,10 +262,12 @@ def _run(store, local, say, hub):
     except SystemExit as exc:
         if exc.code not in (None, 0):
             print(exc.code, file=sys.stderr)
-        raise SyncFailed('import failed')
+        raise SyncFailed(f'importing the chats failed: {exc.code}. Nothing was committed or sent. '
+                         f'Run `llmpro sync --local` in a terminal to see every line of the error.')
     except Exception as exc:
         print(f'{type(exc).__name__}: {exc}', file=sys.stderr)
-        raise SyncFailed('import failed')
+        raise SyncFailed(f'importing the chats failed ({type(exc).__name__}: {exc}). Nothing was committed or '
+                         f'sent. Run `llmpro sync --local` in a terminal to see every line of the error.')
     if store_redact_version() < llmpro.REDACT_VERSION:
         say(f'recording redact_version = {llmpro.REDACT_VERSION} in config.toml')
         set_redact_version(cfg.CONFIG_FILE, llmpro.REDACT_VERSION)
@@ -274,7 +279,9 @@ def _run(store, local, say, hub):
         stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
         r = subprocess.run(['git', '-C', store, 'commit', '-q', '-m', f'sync {cfg.MACHINE} {stamp}: new and changed sessions'])
         if r.returncode != 0:
-            raise SyncFailed(f'secret check failed; nothing committed. Run `llmpro check --context --store {store}`')
+            raise SyncFailed(f'the secret check found something in the {n} changed files, so nothing was committed '
+                             f'or sent. See each hit with `llmpro check --context --store {store}`, then remove it '
+                             f'or allowlist it, and run `llmpro sync` again.')
 
     if local:
         return
@@ -285,29 +292,42 @@ def _run(store, local, say, hub):
     branch = out(store, 'branch', '--show-current')
     say('fetching from the hub')
     if subprocess.run(['git', '-C', store, 'fetch', '-q', 'hub']).returncode != 0:
-        raise SyncFailed('cannot reach the hub')
+        raise SyncFailed(f'cannot fetch from the hub ({out(store, "remote", "get-url", "hub")}). New chats were '
+                         f'committed on this machine and the next `llmpro sync` sends them. Check that the hub is '
+                         f'reachable, then run `llmpro sync` again.')
     if not ok(store, 'rev-parse', '-q', '--verify', f'hub/{branch}') or ok(store, 'merge-base', '--is-ancestor', f'hub/{branch}', 'HEAD'):
         pass  # hub is empty or has nothing new
     else:
         # Check what came in before merging it: every file and every blob in its history.
         say('checking the fetched commits for secrets')
         if check.run(store, history=True) != 0:
-            raise SyncFailed('fetched commits failed the secret check; not merged')
+            n = out(store, 'rev-list', '--count', f'HEAD..hub/{branch}')
+            raise SyncFailed(f'the {n} commits fetched from the hub (hub/{branch}) failed the secret check, so they '
+                             f'were not merged and this store is unchanged. Another machine committed them. See each '
+                             f'hit with `llmpro check --history --context --store {store}`; fix it on the machine that '
+                             f'made it, then run `llmpro sync` on both.')
         say("merging the hub's commits")
         if subprocess.run(['git', '-C', store, 'merge', '-q', '--no-edit', f'hub/{branch}']).returncode != 0:
+            files = out(store, 'diff', '--name-only', '--diff-filter=U').split() or ['(unknown)']
             subprocess.run(['git', '-C', store, 'merge', '--abort'])
-            raise SyncFailed('merge conflict with the hub (probably a memory edited on two machines); merge by hand')
+            raise SyncFailed(f'merging hub/{branch} conflicts in {", ".join(files)} (probably edited on two machines). '
+                             f'The merge was undone and this store is as before. Merge by hand: '
+                             f'`git -C {store} merge hub/{branch}`, fix those files, commit, then `llmpro sync`.')
         from .importer import memory
         memory.run(store, index_only=True)
         git(store, 'add', 'memory/INDEX.md')
         if not ok(store, 'diff', '--cached', '--quiet'):
             r = subprocess.run(['git', '-C', store, 'commit', '-q', '-m', f'sync {cfg.MACHINE}: rebuild memory index after merge'])
             if r.returncode != 0:
-                raise SyncFailed('secret check failed after merge')
+                raise SyncFailed(f"the hub's commits were merged, but the secret check stopped the commit of the "
+                                 f'rebuilt memory/INDEX.md, so nothing was sent. See each hit with '
+                                 f'`llmpro check --context --store {store}`, then run `llmpro sync` again.')
     ahead = subprocess.run(['git', '-C', store, 'rev-list', '--count', f'hub/{branch}..HEAD'], capture_output=True, text=True)
     say(f'pushing {ahead.stdout.strip() if ahead.returncode == 0 else "all"} commits (the hook checks every blob in history)')
     if subprocess.run(['git', '-C', store, 'push', '-q', 'hub', f'HEAD:{branch}']).returncode != 0:
-        raise SyncFailed('push to the hub failed')
+        raise SyncFailed(f'sending to the hub failed (the pre-push secret check or the hub refused it). The commits '
+                         f'stay on this machine and the next `llmpro sync` sends them. See each hit with '
+                         f'`llmpro check --history --context --store {store}`, then run `llmpro sync` again.')
     say('done')
 
 
