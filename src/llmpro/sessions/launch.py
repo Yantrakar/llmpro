@@ -209,7 +209,7 @@ def remote_argv(m, target):
     from . import remote
     if m.error or not m.ssh or m.ssh.startswith('-'):
         raise ValueError(f'{m.name}: not a machine that can be asked')
-    return ['ssh', '-t', '--', m.ssh, remote.remote_string(m, ['resume', target])]
+    return ['ssh', '-t', '--', m.ssh, remote.remote_string(m, ['resume', '--', target])]
 
 
 def run_remote(m, target):

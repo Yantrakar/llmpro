@@ -638,7 +638,7 @@ def test_remote_argv():
     m = cfg.Machine('work', 'me@work.example.com', '~/.local/bin/llmpro', '')
     argv = launch.remote_argv(m, 'claude:my name')
     assert argv[:4] == ['ssh', '-t', '--', 'me@work.example.com']
-    assert argv[4] == remote.remote_string(m, ['resume', 'claude:my name'])
+    assert argv[4] == remote.remote_string(m, ['resume', '--', 'claude:my name'])
     assert "'claude:my name'" in argv[4]
     with pytest.raises(ValueError):
         launch.remote_argv(cfg.Machine('w', '-oProxy=x', 'llmpro', ''), 'a')
@@ -656,7 +656,7 @@ def test_resume_at_machine_runs_ssh_and_reads_nothing_here(ssh, store, monkeypat
     assert code == 5
     (call,) = ssh_calls(ssh)
     assert call[0] == '-t' and call[1] == '--' and call[2] == 'me@work.example.com'
-    assert call[3].endswith("resume 'my name'") and 'llmpro' in call[3]
+    assert call[3].endswith("resume -- 'my name'") and 'llmpro' in call[3]
     assert '@work' not in call[3]
 
 
