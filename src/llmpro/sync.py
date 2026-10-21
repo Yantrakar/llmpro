@@ -22,7 +22,7 @@ import tempfile
 import time
 
 import llmpro
-from . import check, store as cfg, tools
+from . import check, store as cfg
 
 HOOK_NAMES = ('pre-commit', 'pre-merge-commit', 'pre-push')
 MERGE_DRIVER = 'llmpro merge-driver manifest %O %A %B'
@@ -187,10 +187,8 @@ class Hub:
 def notify(msg):
     """A desktop notice for a sync that failed with nobody watching the terminal. It carries the whole message:
     what failed, what state the store is in, and what to run next."""
-    send = tools.which('notify-send')
-    if send:
-        subprocess.run([send, '--app-name=llmpro', '--icon=dialog-warning', 'llmpro sync failed',
-                        msg], capture_output=True)
+    from . import notice
+    notice.notify('llmpro sync failed', msg, icon='dialog-warning')
 
 
 def run(store, local=False, quiet=False):

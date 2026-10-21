@@ -35,6 +35,10 @@ local_only = []
 # laptop = "laptop"
 # work = { ssh = "me@work.example.com", llmpro = "~/.local/bin/llmpro", hostname = "work-pc" }
 
+[sessions]
+refresh = 5    # seconds between redraws of `llmpro resume --watch` (at least 2)
+notify = true  # send a desktop notice when a session starts waiting for you
+
 [sources]
 # Project-local tool folders (a project that sets its own CODEX_HOME or CLAUDE_CONFIG_DIR), read in
 # addition to ~/.codex and ~/.claude. Their credential files are never opened.

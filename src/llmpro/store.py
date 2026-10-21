@@ -205,3 +205,38 @@ def machines(store):
         else:
             out.append(Machine(name, ssh, path, ''))
     return out
+
+
+# --- [sessions]: how `llmpro resume --watch` behaves ---
+
+SESSIONS_DEFAULTS = {'refresh': 5, 'notify': True}
+MIN_REFRESH = 2
+
+
+def sessions_config(store):
+    """-> the [sessions] table of STORE/config.toml with a default for every key it leaves out. A value of the
+    wrong type is replaced by its default, with one warning on stderr per value. refresh is at least 2. A
+    config.toml that cannot be read gives the defaults."""
+    out = dict(SESSIONS_DEFAULTS)
+    try:
+        with open(os.path.join(store, 'config.toml'), 'rb') as fh:
+            table = tomllib.load(fh).get('sessions', {})
+    except (OSError, ValueError):
+        return out
+    if not isinstance(table, dict):
+        print('config.toml: [sessions] must be a table; using the defaults', file=sys.stderr)
+        return out
+    for key, default in SESSIONS_DEFAULTS.items():
+        if key not in table:
+            continue
+        value = table[key]
+        if isinstance(value, type(default)) and (type(default) is not int or not isinstance(value, bool)):
+            out[key] = value
+        else:
+            kind = 'true or false' if isinstance(default, bool) else 'a whole number'
+            print(f'config.toml: [sessions] {key} must be {kind}; using {str(default).lower()}', file=sys.stderr)
+    for key, value in table.items():
+        if key not in SESSIONS_DEFAULTS:
+            out[key] = value  # keys that later packages read themselves
+    out['refresh'] = max(MIN_REFRESH, out['refresh'])
+    return out
