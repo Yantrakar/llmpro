@@ -287,6 +287,33 @@ def local_rows(line=True, machine=None):
     return sort(rows)
 
 
+def all_rows(machine=None, control=None, line=True, timeout=10):
+    """-> (rows, errors): this machine's rows and those of every machine in [machines], asked at once, merged
+    and sorted. errors is [{"machine", "error"}]. `machine` limits it to one name (this machine's own name
+    too). `control` maps a machine name to a ssh ControlPath."""
+    from . import remote
+    asked = [] if machine == cfg.MACHINE else cfg.machines(cfg.STORE)
+    errors = []
+    if machine and machine != cfg.MACHINE:
+        if machine not in [m.name for m in asked]:
+            return [], [{'machine': machine, 'error': f'{machine}: no such machine in [machines]'}]
+        asked = [m for m in asked if m.name == machine]
+    with_error = [m for m in asked if m.error]
+    errors += [{'machine': m.name, 'error': m.error} for m in with_error]
+    ok = [m for m in asked if not m.error]
+    # remote answers are awaited in threads while this machine's rows are read here
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        waiting = pool.submit(remote.ask_all, ok, timeout, control)
+        rows = [] if machine and machine != cfg.MACHINE else local_rows(line=line)
+        answers = waiting.result()
+    for m, got, error in answers:
+        rows.extend(got)
+        if error:
+            errors.append({'machine': m.name, 'error': error})
+    return sort(rows), errors
+
+
 # --- the command ---
 
 def age(since, now=None):
@@ -346,17 +373,25 @@ def command(args, store):
     if not supported():
         print('live sessions need Linux', file=sys.stderr)
         return 2
-    for form, used in (('a target', args.target), ('--watch', args.watch),
-                       ('--machine', args.machine and args.machine != cfg.MACHINE)):
+    for form, used in (('a target', args.target), ('--watch', args.watch)):
         if used:
             print(f'llmpro resume: {form} comes in a later version', file=sys.stderr)
             return 2
     cfg.configure(store, required=False)
-    rows = local_rows(line=not args.no_line)
+    errors = []
+    if args.local or (args.machine == cfg.MACHINE):
+        rows = local_rows(line=not args.no_line)
+    else:
+        if not args.json and sys.stderr.isatty():
+            asked = [m for m in cfg.machines(store) if not m.error]
+            if asked:
+                print(f'asking {len(asked)} machines...', file=sys.stderr)
+        rows, errors = all_rows(machine=args.machine, line=not args.no_line)
     if args.json:
         jsonout.emit('resume', {'format': FORMAT, 'machine': cfg.MACHINE, 'rows': [r.as_dict() for r in rows],
-                                'errors': []})
+                                'errors': errors})
         return 0
+    rows = rows + [dataclasses.replace(bad('-', e['machine'], '', e['error']), name='-') for e in errors]
     if not rows:
         print('no open sessions', file=sys.stderr)
         return 0

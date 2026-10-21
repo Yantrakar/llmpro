@@ -514,6 +514,23 @@ def survey_harness(store):
     return item
 
 
+# ---------------------------------------------------------------- 6. machines
+
+def survey_machines(store):
+    """-> an Item that reports whether each machine in [machines] can be asked, or None when there are none.
+    A report only: never missing, and apply does nothing for it."""
+    from .sessions import clean, remote
+    asked = cfg.machines(store)
+    if not asked:
+        return None
+    answers = {m.name: (rows, error) for m, rows, error in remote.ask_all([m for m in asked if not m.error])}
+    details = []
+    for m in asked:
+        rows, error = answers.get(m.name, ([], m.error))
+        details.append(clean(f'{m.name}: ok ({len(rows)} open)' if rows or not error else error))
+    return Item('machines', False, 'present', details)
+
+
 # ---------------------------------------------------------------- setup
 
 def parse_only(only):
@@ -563,6 +580,9 @@ def survey(store, hub, only=None):
             return items
         items += [survey_settings(store), survey_sessions(store), survey_pointers(store),
                    survey_harness(store)]
+        machines = survey_machines(store)
+        if machines:
+            items.append(machines)
     return items + survey_plugins(store, only)
 
 

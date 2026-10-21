@@ -199,7 +199,7 @@ def test_mcp_handshake(server):
     server.p.stdin.write(json.dumps({'jsonrpc': '2.0', 'method': 'notifications/initialized'}) + '\n')
     assert server.ask('ping')['result'] == {}
     tools = server.ask('tools/list')['result']['tools']
-    assert [t['name'] for t in tools] == ['find', 'check', 'sync_status']
+    assert [t['name'] for t in tools] == ['find', 'check', 'sync_status', 'sessions']
     assert all(t['annotations']['readOnlyHint'] is True for t in tools)
 
 

@@ -670,12 +670,13 @@ def test_resume_prompt_enter_alone_and_an_answer(one_row, store, capsys, monkeyp
 
 
 def test_resume_later_forms(one_row, store, capsys):
-    for args, form in ((['x'], 'a target'), (['--watch'], '--watch'), (['--machine', 'other.example.com'], '--machine')):
+    for args, form in ((['x'], 'a target'), (['--watch'], '--watch')):
         code, out, err = run(['resume', '--store', store] + args, capsys)
         assert (code, out) == (2, '')
         assert err == f'llmpro resume: {form} comes in a later version\n'
     assert run(['resume', '--store', store, '--local', '--json'], capsys)[0] == 0
     assert run(['resume', '--store', store, '--machine', cfg.MACHINE, '--json'], capsys)[0] == 0
+    # --machine with another name is package 16: it asks that machine (see test_sessions_machines.py)
 
 
 def test_resume_needs_linux(one_row, store, capsys, monkeypatch):
