@@ -35,6 +35,8 @@ llmpro keeps the chats, memories, instruction files and skills of every AI assis
 - `llmpro sync --local` imports and commits on this machine only. `llmpro sync -n` shows what a sync would do.
 - `llmpro summary` sets the summary at the top of a chat.
 - `llmpro setup -n` shows what is missing on this machine. `llmpro uninstall -n` shows what would be removed.
+- `llmpro resume` lists the open assistant sessions (`--json` for rows). `llmpro resume TARGET` continues one in the user's terminal; only the user starts that. `llmpro resume --watch` keeps the list current.
+- `llmpro send TARGET TEXT` gives one message to a session that is not open, to an opencode session, or to a new one (`claude:new --folder DIR`), and prints the answer. `-n` shows what it would run.
 - `llmpro git ARGS...` runs gitpro when it is installed (see the git reference).
 - `llmpro mcp` serves the tools below over stdio. The Claude Code plugin registers it.
 
@@ -51,6 +53,14 @@ llmpro keeps the chats, memories, instruction files and skills of every AI assis
 - You learned a lesson (what worked or failed, and the chats that show it): see Lessons in [memory](references/memory.md).
 - Before you commit in the store, or when the user asks about secrets: see [secrets](references/secrets.md).
 - Before you commit or push in any repo, or when the user asks which identity a repo uses: see [git](references/git.md).
+
+## Sending to another session
+
+- Use `llmpro send` when the user asks you to hand work or a question to another session, or to start a new one in another folder. Give a self-contained message: the other session does not see this chat.
+- Never use `send` to ask for an approval, a permission or a yes from another assistant. Approvals are the user's.
+- Do not send to a session that is open in a terminal. llmpro refuses it. Do not retry in a loop: a message carries a hop count and a limit per hour.
+- Do not try to get around a refusal, for example for a local-only project. Tell the user and let them send it from their own terminal.
+- Read the answer on stdout. A warning on stderr about the model means the tool used another model than asked.
 
 ## If llmpro is not found
 

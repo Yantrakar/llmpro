@@ -37,6 +37,8 @@ Setup creates the store, moves each assistant's chat folders into it (a link sta
 - `llmpro summary` sets the summary at the top of a chat.
 - `llmpro setup` sets up this machine. `-n` only shows. `-y` does not ask.
 - `llmpro uninstall` takes llmpro off this machine. It keeps the store. `-n` only shows.
+- `llmpro resume` lists the open assistant sessions. `llmpro resume TARGET` continues one. `llmpro resume --watch` keeps the list current. See Live sessions.
+- `llmpro send TARGET TEXT` gives one message to a session and prints the answer. See Live sessions.
 - `llmpro git ...` runs gitpro, if it is installed.
 - `llmpro mcp` serves llmpro's tools to assistants over stdio.
 
@@ -60,6 +62,24 @@ The plugin brings the skill, the MCP server and a hook in one step.
 The hook runs before each Bash call. If gitpro is installed and can check commands, llmpro hands the call to `gitpro agent-check`. Otherwise it does nothing and never blocks. If gitpro's own plugin is enabled too, the check runs twice. Keep one of them.
 
 `llmpro setup` also registers the MCP server with Claude Code. With the plugin installed, Claude Code then starts it twice. Keep the plugin's and run `claude mcp remove --scope user llmpro`.
+
+## Live sessions
+
+Linux only. llmpro reads the records that Claude Code, Copilot CLI and opencode keep of their sessions. It never writes into them.
+
+- `llmpro resume` lists the open sessions here and on the machines in `[machines]` of `config.toml`, each with its state: `needs-approval`, `needs-reply`, `working` or `unknown`. `--local` asks this machine only. `--json` prints the rows.
+- `llmpro resume TARGET` continues a session in your terminal. TARGET is `[tool:]name-or-id-prefix[@machine]`. A session that is open in another terminal is refused: close it there first.
+- `llmpro resume --watch` keeps the list current and sends a desktop notice when a session starts waiting. `[sessions] refresh` and `notify` in `config.toml` tune it.
+- `llmpro send TARGET TEXT` gives one message to a session that is not open, to an opencode session, or to a new session (`claude:new`, `copilot:new`, `opencode:new`, with `--folder DIR`). It prints the answer. `TEXT` of `-` reads stdin. `-n` shows the command and runs nothing.
+
+Limits on `send`:
+
+- The message goes to the tool on stdin, never on the command line.
+- llmpro never adds a flag that allows tools or skips a permission. A turn that needs a permission is refused by the tool.
+- It never types into a session that is open in a terminal.
+- A message carries a hop count. `[sessions] max_hops` (default 2) stops loops made by mistake. `sends_per_hour` (default 20) limits one session. `send_timeout` (default 900 seconds) ends a send that takes too long.
+- From inside a session, a send to a local-only project is refused. This stops mistakes. It is not a security boundary.
+- `send` is not an MCP tool. The MCP server stays read-only.
 
 ## Push guard
 

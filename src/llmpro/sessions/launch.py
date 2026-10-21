@@ -38,6 +38,10 @@ NESTING = (
     'LLMPRO_',  # llmpro's own; only LLMPRO_SEND_HOPS goes on
 )
 KEEP = ('LLMPRO_SEND_HOPS',)
+# Variables the tools set for the shell commands they run (DECISIONS S8). A caller that has one is inside a
+# session. Never VSCODE_*: a person in an editor terminal is not inside a session.
+INSIDE = ('CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'AI_AGENT', 'COPILOT_CLI', 'COPILOT_AGENT_SESSION_ID', 'OPENCODE',
+          'OPENCODE_SESSION_ID')
 GIT_COPILOT = re.compile(r'GIT_CONFIG_COUNT|GIT_CONFIG_(?:KEY|VALUE)_\d+|GIT_OPTIONAL_LOCKS|GIT_TERMINAL_PROMPT')
 # Editor settings files a tool must not change (S6). Copilot CLI once wrote into keybindings.json.
 HOST_FILES = tuple(os.path.join('.config', app, 'User', name) for app in ('Code', 'Code - Insiders')
