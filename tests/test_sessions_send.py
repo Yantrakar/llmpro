@@ -413,7 +413,7 @@ def test_lock_held_by_another_process(tools, folder, store, monkeypatch, capsys)
 def test_session_open_after_the_lock_is_refused(tools, folder, store, monkeypatch, capsys):
     tools.make('claude', stdout=CLAUDE_OUT)
     listing(monkeypatch, row(folder=str(folder)))
-    monkeypatch.setattr(launch, '_now_open', lambda x: row(folder=str(folder), pid=5, where='terminal'))
+    monkeypatch.setattr(launch, 'now_open', lambda x: row(folder=str(folder), pid=5, where='terminal'))
     code, out, err = go(['send', '--store', store, 'demo', 'hi'], capsys)
     assert code == 1 and 'is open in terminal' in err and tools.calls('claude') == []
     assert not os.path.exists(send.sends_path())
@@ -467,7 +467,7 @@ def test_tool_status_nonzero_is_exit_one_and_reported(tools, folder, store, monk
     code = cli.main(['send', '--store', store, '--json', 'demo', 'hi'])
     out, err = capfd.readouterr()
     assert code == 1 and 'boom' in err and 'status 3' in err  # the tool's stderr passes through
-    assert json.loads(out)['ok'] is False and json.loads(out)['exit'] == 1
+    assert json.loads(out)['ok'] is False and json.loads(out)['exit'] == 3  # the tool's own status
 
 
 def test_new_session_ids_from_each_tools_json(tools, folder, store, monkeypatch, capsys):

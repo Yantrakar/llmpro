@@ -227,7 +227,7 @@ def run_remote(m, target):
     return _child(argv)
 
 
-def _now_open(row):
+def now_open(row):
     """-> the same session read again on this machine, or None when it is not there."""
     from .. import sessions
     for r in sessions.local_rows(line=False):
@@ -250,7 +250,7 @@ def run(row, lock=None):
 
 
 def _run(row):
-    now = _now_open(row)
+    now = now_open(row)
     why = refusal(row) or (refusal(now) if now is not None else '')
     if why:
         print(why, file=sys.stderr)

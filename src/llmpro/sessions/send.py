@@ -416,7 +416,7 @@ def local(args, store, row, text, hops, lim):
         return report(args, row, model, '', 0, [], dry=argv)
     with contextlib.nullcontext() if new else launch.lock(row):
         if not new:
-            now = launch._now_open(row)
+            now = launch.now_open(row)
             if now is not None:
                 channel(now, model)  # refused if it is open now
         count(f'{row.tool}:new@{folder}' if new else f'{row.tool}:{row.id}', lim['sends_per_hour'])
@@ -433,7 +433,7 @@ def execute(args, row, argv, text, folder, hops, lim, model):
         print(line, file=sys.stderr)
     if timed_out:
         print(f'{row.tool} did not finish within {lim["send_timeout"]} seconds; stopped it', file=sys.stderr)
-        return report(args, row, model, '', 1, [], used='')
+        return report(args, row, model, '', 1, [], used='', status=status)
     got = parse(row.tool, stdout)
     warnings = []
     session = row.id or got['session']
@@ -458,19 +458,20 @@ def execute(args, row, argv, text, folder, hops, lim, model):
             print(f'session: {row.tool}:{session}', file=sys.stderr)
         else:
             print('could not tell which session was created; find it with llmpro resume', file=sys.stderr)
-    return report(args, row, model, got['answer'], exit_code, warnings, used=used, session=session)
+    return report(args, row, model, got['answer'], exit_code, warnings, used=used, session=session, status=status)
 
 
 def _lines(text):
     return '\n'.join(clean(line) for line in (text or '').splitlines())
 
 
-def report(args, row, model, answer, code, warnings, dry=None, used='', session=''):
+def report(args, row, model, answer, code, warnings, dry=None, used='', session='', status=0):
+    """Print the answer, or the JSON envelope, whose `exit` is the tool's own status. -> code."""
     answer = _lines(answer)
     if args.json:
         from .. import jsonout
         body = {'target': clean(args.target), 'machine': clean(row.machine), 'model': clean(used or model),
-                'answer': answer, 'exit': code, 'warnings': [clean(w) for w in warnings]}
+                'answer': answer, 'exit': status, 'warnings': [clean(w) for w in warnings]}
         if session:
             body['session'] = session
         if dry is not None:
