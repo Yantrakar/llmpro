@@ -13,7 +13,7 @@ from llmpro import cli, jsonout, mcp, setup, sync
 
 OLD_HOOK = '#!/bin/sh\nexec agentspro hook {name} "$@"\n'
 OLD_DRIVER = 'agentspro merge-driver manifest %O %A %B'
-CAPABILITIES = ['check', 'check.json', 'find', 'find.json', 'mcp', 'resume', 'resume.json', 'resume.target',
+CAPABILITIES = ['check', 'check.json', 'find', 'find.json', 'mcp', 'resume', 'resume.json', 'resume.target', 'resume.watch',
                 'setup', 'setup.dry-run', 'summary', 'sync', 'sync.dry-run', 'uninstall', 'version.json']
 SRC = Path(llmpro.__file__).parent
 

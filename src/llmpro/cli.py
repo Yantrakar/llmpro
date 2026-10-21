@@ -4,7 +4,7 @@ import sys
 
 # What this build can do, sorted. `llmpro --version --json` lists it; later packages add to it.
 CAPABILITIES = ('check', 'check.json', 'find', 'find.json', 'mcp', 'resume', 'resume.json', 'resume.target',
-                'setup', 'setup.dry-run', 'summary', 'sync', 'sync.dry-run', 'uninstall', 'version.json')
+                'resume.watch', 'setup', 'setup.dry-run', 'summary', 'sync', 'sync.dry-run', 'uninstall', 'version.json')
 
 
 PLUGIN_COMMANDS = {}  # command name -> handler(args, store), filled by build_parser from the plugins
@@ -81,7 +81,7 @@ def build_parser():
     r.add_argument('--json', action='store_true', help='result as JSON')
     r.add_argument('--local', action='store_true', help='this machine only; no ssh')
     r.add_argument('--machine', metavar='NAME', help='only this machine')
-    r.add_argument('--watch', action='store_true', help='keep the list current (a later version)')
+    r.add_argument('--watch', action='store_true', help='keep the list current and send a desktop notice when a session starts waiting')
     r.add_argument('--no-line', action='store_true', help='leave out the one line of content, and read no transcript')
 
     from . import plugins

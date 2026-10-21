@@ -529,8 +529,8 @@ def command(args, store):
         print('live sessions need Linux', file=sys.stderr)
         return 2
     if args.watch:
-        print('llmpro resume: --watch comes in a later version', file=sys.stderr)
-        return 2
+        from . import watch
+        return watch.command(args, store)
     cfg.configure(store, required=False)
     if args.target:
         return resume_target(args, store)
