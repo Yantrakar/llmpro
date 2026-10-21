@@ -68,6 +68,10 @@ All notable changes to llmpro (developed as agentspro). The format follows
   started. `find --json` history hits carry it. The first sync after upgrading adds it to
   every chat whose source is still on the machine: a one-time rewrite of those files.
 - `llmpro find --shared-only` leaves out local-only chats.
+- `llmpro resume` lists the open Claude Code, Copilot CLI and opencode sessions on this
+  machine, those waiting for you first, with how long each has waited and one line of
+  what it said. It reads each tool's own records and writes nothing. `--json` gives the
+  same list as data, and `--no-line` leaves out every line. Live sessions need Linux.
 
 ### Changed
 
