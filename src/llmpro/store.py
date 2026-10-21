@@ -4,7 +4,9 @@ Nothing here is read when the module is imported: configure(path) loads the stor
 the module-level names below, in place, so `from .store import LOCAL_ONLY` keeps seeing the current list.
 """
 import importlib
+import collections
 import os
+import re
 import socket
 import sys
 import tomllib
@@ -158,3 +160,48 @@ def privacy_stop_reason():
         return ''
     privacy = importlib.import_module('llmpro.privacy')
     return privacy.stop_reason()
+
+
+# --- [machines]: other machines whose sessions `llmpro resume` lists (DECISIONS S5) ---
+
+Machine = collections.namedtuple('Machine', 'name ssh llmpro error')
+MACHINE_WORD = re.compile(r'[A-Za-z0-9._@-]+')
+DEFAULT_LLMPRO = '~/.local/bin/llmpro'
+
+
+def machines(store):
+    """-> [Machine(name, ssh, llmpro, error)] from STORE/config.toml [machines], read here (configure is not
+    needed), without the entry that is this machine (by name or by its `hostname`). An entry that is not
+    well formed has `error` set and is never asked. A config.toml that cannot be read gives []."""
+    try:
+        with open(os.path.join(store, 'config.toml'), 'rb') as fh:
+            table = tomllib.load(fh).get('machines', {})
+    except (OSError, ValueError):  # tomllib's error and a bad encoding are both ValueError
+        return []
+    if not isinstance(table, dict):
+        return []
+    out = []
+    for name, value in table.items():
+        hostname = name
+        if isinstance(value, str):
+            ssh, path = value, DEFAULT_LLMPRO
+        elif isinstance(value, dict) and isinstance(value.get('ssh'), str):
+            ssh, path = value['ssh'], value.get('llmpro', DEFAULT_LLMPRO)
+            hostname = value.get('hostname', name)
+            if not isinstance(path, str) or not path or not isinstance(hostname, str):
+                out.append(Machine(name, '', '', f'[machines] {name}: llmpro and hostname must be text'))
+                continue
+        else:
+            why = 'ssh is required' if isinstance(value, dict) else 'the value must be an ssh target or a table'
+            out.append(Machine(name, '', '', f'[machines] {name}: {why}'))
+            continue
+        if name == MACHINE or hostname == MACHINE:
+            continue
+        if not MACHINE_WORD.fullmatch(name):
+            out.append(Machine(name, '', '', f'[machines] {name}: the name may use only letters, digits and . _ @ -'))
+        elif not MACHINE_WORD.fullmatch(ssh) or ssh.startswith('-'):
+            out.append(Machine(name, '', '', f'[machines] {name}: the ssh target must use only letters, digits and '
+                                             f'. _ @ - and must not start with -'))
+        else:
+            out.append(Machine(name, ssh, path, ''))
+    return out

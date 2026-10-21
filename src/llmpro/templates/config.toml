@@ -28,6 +28,13 @@ local_only = []
 # local. Chats that are already shared stay where they are; sync lists them so you can move them by hand.
 # local_identities = ["work"]
 
+[machines]
+# Other machines whose open sessions `llmpro resume` lists, asked over ssh without a password (use a key).
+# A name maps to an ssh target, or to a table: ssh (required), llmpro (default ~/.local/bin/llmpro) and
+# hostname (default the name). The entry for this machine is skipped.
+# laptop = "laptop"
+# work = { ssh = "me@work.example.com", llmpro = "~/.local/bin/llmpro", hostname = "work-pc" }
+
 [sources]
 # Project-local tool folders (a project that sets its own CODEX_HOME or CLAUDE_CONFIG_DIR), read in
 # addition to ~/.codex and ~/.claude. Their credential files are never opened.

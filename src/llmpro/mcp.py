@@ -16,7 +16,7 @@ INSTRUCTIONS = ('llmpro offers tools to search past chats and memories in the st
                 'secrets, to see what a sync would do, and, when gitpro is installed, the git identity tools '
                 'with the prefix git_. Every tool is read-only. When something needs changing, the tool says '
                 'which command to run, and the person runs it.')
-OWN = ('find', 'check', 'sync_status')
+OWN = ('find', 'check', 'sync_status', 'sessions')
 READ_ONLY = {'readOnlyHint': True}
 
 TOOLS = [
@@ -41,6 +41,13 @@ TOOLS = [
                     'git settings. Changes nothing. To sync the person runs `llmpro sync`.',
      'inputSchema': {'type': 'object', 'properties': {}},
      'annotations': {'title': 'Sync status', **READ_ONLY}},
+    {'name': 'sessions',
+     'description': 'List the open assistant sessions on this machine and on the machines in config.toml: tool, '
+                    'machine, name, folder, state (needs-approval, needs-reply, working, unknown, not-readable) '
+                    'and time. Read-only: no content line and no session in a local-only folder. To continue a '
+                    'session the person runs `llmpro resume`.',
+     'inputSchema': {'type': 'object', 'properties': {}},
+     'annotations': {'title': 'Open sessions', **READ_ONLY}},
 ]
 
 
@@ -50,6 +57,8 @@ def command(name, args):
         return ['check', '--json']
     if name == 'sync_status':
         return ['sync', '-n', '--json']
+    if name == 'sessions':
+        return ['resume', '--json', '--no-line']
     if name == 'find':
         query = args.get('query')
         if not isinstance(query, list) or not query or not all(isinstance(w, str) and w for w in query):
@@ -97,6 +106,23 @@ def gate_find(result):
     return {'content': [{'type': 'text', 'text': json.dumps(body, ensure_ascii=False)}], 'isError': False}
 
 
+def gate_sessions(result):
+    """-> the sessions result with every `line` emptied and every local-only row removed; an error if it cannot
+    be checked. A row that does not say local_only is false is removed too."""
+    try:
+        body = json.loads(result['content'][0]['text'])
+        rows = body['rows']
+        if not isinstance(body, dict) or not isinstance(rows, list):
+            raise ValueError
+    except (ValueError, KeyError, IndexError, TypeError):
+        return refuse('sessions output could not be checked')
+    kept = [dict(r, line='') for r in rows if isinstance(r, dict) and r.get('local_only') is False]
+    if len(kept) != len(rows):
+        body['withheld'] = len(rows) - len(kept)
+    body['rows'] = kept
+    return {'content': [{'type': 'text', 'text': json.dumps(body, ensure_ascii=False)}], 'isError': False}
+
+
 def call(store, name, args):
     """-> the result of tools/call."""
     try:
@@ -110,7 +136,9 @@ def call(store, name, args):
     # 0 ok and 1 "problems or nothing found" are answers; 2 is an error
     if r.returncode in (0, 1):
         result = {'content': [{'type': 'text', 'text': r.stdout.strip()}], 'isError': False}
-        return gate_find(result) if name == 'find' else result
+        if name == 'find':
+            return gate_find(result)
+        return gate_sessions(result) if name == 'sessions' else result
     text = (r.stderr or r.stdout).strip() or f'exit {r.returncode}'
     return {'content': [{'type': 'text', 'text': text}], 'isError': True}
 

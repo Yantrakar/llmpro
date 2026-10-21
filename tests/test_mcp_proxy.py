@@ -77,7 +77,7 @@ def test_initialize_unknown_version_gets_newest(store, fake_gitpro):
 def test_tools_list(store, fake_gitpro):
     fake_gitpro.mcp(TOOLS)
     resp = session(store, init(), ('tools/list', {}))[2]
-    assert names(resp) == ['find', 'check', 'sync_status', 'git_why', 'git_scan']
+    assert names(resp) == ['find', 'check', 'sync_status', 'sessions', 'git_why', 'git_scan']
     by = {t['name']: t for t in resp['result']['tools']}
     assert all(t['annotations']['readOnlyHint'] for t in by.values())
     assert by['git_why']['annotations'] == {'title': 'git: Why', 'readOnlyHint': True}
@@ -90,7 +90,7 @@ def test_name_clash_and_deprecated_case(store, fake_gitpro):
     fake_gitpro.mcp([tool('why', annotations=RO), tool('why', annotations=RO), tool('old', 'DEPRECATED soon', RO),
                      tool('noann'), tool('sync_status', annotations=RO)])
     resp = session(store, init(), ('tools/list', {}))[2]
-    assert names(resp) == ['find', 'check', 'sync_status', 'git_why', 'git_sync_status']
+    assert names(resp) == ['find', 'check', 'sync_status', 'sessions', 'git_why', 'git_sync_status']
 
 
 def test_call_returns_child_result_unchanged(store, fake_gitpro):
@@ -205,7 +205,7 @@ def test_child_garbage(store, fake_gitpro):
 
 def test_gitpro_missing(store):
     resp = session(store, init(), ('tools/list', {}))
-    assert names(resp[2]) == ['find', 'check', 'sync_status']
+    assert names(resp[2]) == ['find', 'check', 'sync_status', 'sessions']
     text = resp[1]['result']['instructions']
     assert 'gitpro' in text and 'git' in text
     assert 'not installed' in text
@@ -213,12 +213,12 @@ def test_gitpro_missing(store):
 
 def test_gitpro_without_mcp_lists_no_git_tools(store, fake_gitpro):
     fake_gitpro.version(capabilities=('why',))
-    assert names(session(store, init(), ('tools/list', {}))[2]) == ['find', 'check', 'sync_status']
+    assert names(session(store, init(), ('tools/list', {}))[2]) == ['find', 'check', 'sync_status', 'sessions']
 
 
 def test_child_that_will_not_start_is_skipped(store, fake_gitpro):
     write_child(fake_gitpro, 'sys.exit(1)')
-    assert names(session(store, init(), ('tools/list', {}))[2]) == ['find', 'check', 'sync_status']
+    assert names(session(store, init(), ('tools/list', {}))[2]) == ['find', 'check', 'sync_status', 'sessions']
 
 
 def test_empty_lists_and_ping(store, fake_gitpro):
