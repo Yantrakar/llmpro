@@ -33,11 +33,13 @@ From 15 to 19: `sessions.Row` (`paths`), `sessions._proc(pid)`, the adapters' `r
      ago`;
    - it has child processes (`/proc/<pid>/task/*/children`): `it has N child processes (<their
      programs>); they would end with it`;
-   - no live, verified pid (S2).
+   - no live, verified pid (S2);
+   - its `where` is `container`: `it runs in a container`;
+   - it is an opencode session: never taken over, it is continued as in 17 (Facts in 15).
 2. `takeover.run(row, yes)`:
    1. take `launch.lock(row)` (`Busy`: refuse) and keep it until the session runs here;
    2. show `Close <tool> <name> (pid N, <where>, <machine>, idle <t>, no child processes) and continue it
-      here? [y/N]` and ask once; `-y` answers yes; no terminal and no `-y`: exit 2 naming both;
+      here? Anything typed there and not sent is lost. [y/N]` and ask once; `-y` answers yes; no terminal and no `-y`: exit 2 naming both;
    3. `pidfd_open(pid)`; send SIGSTOP; check again (item 1, and the mtime and size of each of `Row.paths`); if anything
       changed, send SIGCONT only and refuse;
    4. print `to continue it elsewhere later: llmpro resume <target>` (there is no undo for a closed
@@ -57,11 +59,18 @@ From 15 to 19: `sessions.Row` (`paths`), `sessions._proc(pid)`, the adapters' `r
 The process side is a real child process started by the test (a `sleep`, presented through
 `sessions._proc` as the tool), so signals are real and harmless: refused states, the 10 second rule (fake
 clock), a non-pts fd 0, a recent terminal use (`takeover._tty` replaced by a file with a fresh mtime), children present, the
-lock held. The happy path: the child has the slave side of `os.openpty()` as its stdin, shows state `T` in `/proc/<pid>/stat` after SIGSTOP, gets SIGHUP and
+lock held, a container row. The happy path: the child has the slave side of `os.openpty()` as its stdin, shows state `T` in `/proc/<pid>/stat` after SIGSTOP, gets SIGHUP and
 SIGCONT and exits, then the fake tool runs with the same lock. A child that ignores SIGHUP: llmpro stops
 after 5 seconds (fake clock) and sends no SIGKILL. A change while stopped: only SIGCONT. No terminal and no
 `-y`: exit 2. A refusal exits 1.
 
 ## Facts (recorded by the integrator before this wave, S10.6)
 
-To be filled in.
+Checked on 2026-10-21.
+
+- S10.6: `KillUserProcesses` is not set in `/etc/systemd/logind.conf` on either machine checked, so the
+  default (no) applies: logging out does not end a user's processes. Linger was on for one machine and
+  off for the other. Takeover does not depend on either.
+- From 17's facts: Claude exits within about a second of SIGHUP (status 129) and removes its record;
+  Copilot exits within a second and writes `session.shutdown`. Both lose a half-typed message, hence the
+  sentence in the question. The 5 second wait is enough for both.

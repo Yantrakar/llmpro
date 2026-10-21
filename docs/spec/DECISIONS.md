@@ -184,8 +184,8 @@ Live sessions need Linux (`/proc`, pidfd); on other systems `resume` and `send` 
 | Tool | Open sessions | State |
 |---|---|---|
 | Claude Code | `~/.claude/sessions/<pid>.json` (`sessionId`, `cwd`, `name`, `status`, `pid`, `procStart`, `version`) | `status`: `idle`, `busy`, `waiting` |
-| Copilot CLI | `~/.copilot/session-state/<id>/inuse.<pid>.lock`, and a `copilot` process whose command line names `--resume <id>` (a resumed session takes its lock only after its first prompt) | the last known event type in `events.jsonl` |
-| opencode | its server, through `opencode` itself (`session.active`, `permission.request.list`) | the server's answer |
+| Copilot CLI | `~/.copilot/session-state/<id>/inuse.<pid>.hold`, on which a live `copilot` process keeps a `flock`, and a `copilot` process whose command line names `--resume <id>` (a resumed session takes its hold file only after its first prompt) | the last known event type in `events.jsonl` |
+| opencode | its server, through `opencode api` (`session.active`, the sessions of live `opencode` clients); the server owns each session and clients share it | `session.active` and `session.permission.list` |
 | Codex | not listed in version 1: on these machines it runs only inside the VS Code extension | |
 
 Each tool has one adapter. It states the tool versions it was checked against. A record whose keys are
@@ -201,9 +201,9 @@ Every row has one of these states, whatever the tool calls it:
 | State | Meaning | Claude Code | Copilot CLI |
 |---|---|---|---|
 | `needs-approval` | a permission prompt is up | `waiting` | `permission.requested` not yet followed by `permission.completed` |
-| `needs-reply` | the turn is over; it waits for the next message | `idle` | `assistant.turn_end`, then only bookkeeping events (`session.usage_checkpoint`, `model.*`) |
-| `working` | it is busy | `busy` | any other last known event |
-| `unknown` | open, but the state cannot be told | | an unknown last event type, or none |
+| `needs-reply` | the turn is over; it waits for the next message | `idle` | `assistant.turn_end`, `abort`, `session.error`, `session.resume` or `session.start`, then only bookkeeping events (usage, info, model and permission changes, notifications, `model.*`; the full list is in 15) |
+| `working` | it is busy | `busy` | a known event of work (messages, tools, subagents, skills, compaction) |
+| `unknown` | open, but the state cannot be told | | an unknown last event type, `session.shutdown`, or none |
 | `not-readable` | the record is in a form this llmpro does not know | | |
 
 Rows are sorted `needs-approval`, `needs-reply`, `working`, `unknown`, `not-readable`, then by time in
@@ -242,11 +242,12 @@ takeover included, happens on that machine.
 
 To continue or ask a session llmpro runs the tool's own resume command in the session's folder, as a
 child in the same terminal, and returns when it exits. It removes the variables that tell a tool it
-runs inside another (`CLAUDECODE`, `CLAUDE_CODE_*` and `CLAUDE_PID`, `COPILOT_*`, `OPENCODE_*`, `VSCODE_*`,
-`*_VSCODE_SNAP_ORIG`, `LLMPRO_*` except the hop count), removes `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` only when
+runs inside another (`CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `AI_AGENT`, `COPILOT_*`,
+`OPENCODE`, `OPENCODE_*`, `VSCODE_*`, `*_VSCODE_SNAP_ORIG`, `LLMPRO_*` except the hop count, and the
+variables a tool sets only for its own shell commands, listed in 17), removes `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` only when
 `TERM_PROGRAM` is `vscode`, and keeps everything else (PATH, LANG, SSH_AUTH_SOCK, proxies, keys). Sessions llmpro starts must not change host settings (the user,
 2026-10-21). Copilot CLI 1.0.100 once wrote a Shift+Enter binding into VS Code's `keybindings.json` on
-its first start; its trigger is not known. So llmpro hashes a short list of editor settings files before
+its first start: its terminal setup, offered once in a VS Code terminal (facts in 17). So llmpro hashes a short list of editor settings files before
 it starts a tool and after the tool exits. If one changed while the tool ran, it says so, shows the
 `diff` against the copy the tool kept, and how to put it back; it does not put it back itself (rule 7),
 because the editor or the user may have changed the file too.
@@ -297,7 +298,9 @@ can be left out, because the sessions the user wants to reach are already open i
 ## S10. Facts to check before building
 
 The integrator checks these with throwaway sessions before the wave that needs them, and records the
-answer in that package file:
+answer in that package file. All ten were checked on 2026-10-21; the answers changed 15 (the Copilot hold
+file, Claude sessions in containers, the opencode operations), 17 (the variables removed), 19 (the
+channels and their JSON) and 20 (container and opencode rows are never taken over):
 1. (15) The Copilot lock file: a real lock in `/proc/locks`, or a name only.
 2. (15) opencode 2.0.30: the exact `opencode` command line that returns `session.active` and
    `permission.request.list` as JSON, whether its server needs a password, and whether `opencode attach`
