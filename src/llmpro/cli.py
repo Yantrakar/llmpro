@@ -3,8 +3,8 @@ interrupted. Results go to stdout, progress to stderr."""
 import sys
 
 # What this build can do, sorted. `llmpro --version --json` lists it; later packages add to it.
-CAPABILITIES = ('check', 'check.json', 'find', 'find.json', 'mcp', 'resume', 'resume.json', 'setup',
-                'setup.dry-run', 'summary', 'sync', 'sync.dry-run', 'uninstall', 'version.json')
+CAPABILITIES = ('check', 'check.json', 'find', 'find.json', 'mcp', 'resume', 'resume.json', 'resume.target',
+                'setup', 'setup.dry-run', 'summary', 'sync', 'sync.dry-run', 'uninstall', 'version.json')
 
 
 PLUGIN_COMMANDS = {}  # command name -> handler(args, store), filled by build_parser from the plugins
@@ -75,8 +75,8 @@ def build_parser():
     m.add_argument('--from', dest='from_file', metavar='FILE.jsonl', help='lines of {"id": ..., "summary": ...}')
 
     r = sub.add_parser('resume', parents=[common], help='list the open assistant sessions, here and on the machines in config.toml')
-    r.add_argument('target', nargs='?', metavar='TARGET', help='[tool:]name-or-id-prefix[@machine] (a later version)')
-    r.add_argument('-n', '--dry-run', action='store_true', help='list only; no question')
+    r.add_argument('target', nargs='?', metavar='TARGET', help='continue this session: [tool:]name-or-id-prefix[@machine]')
+    r.add_argument('-n', '--dry-run', action='store_true', help='list only, or show what continuing would run; nothing is changed')
     r.add_argument('-y', '--yes', action='store_true', help='do not ask')
     r.add_argument('--json', action='store_true', help='result as JSON')
     r.add_argument('--local', action='store_true', help='this machine only; no ssh')
