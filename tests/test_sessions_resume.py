@@ -675,12 +675,14 @@ def test_resume_remote_row_not_open_goes_through_ssh(ssh, store, monkeypatch, ca
     assert call[1] == '--' and f'claude-code:{AID}' in call[3]
 
 
-def test_resume_remote_row_open_is_refused(ssh, store, monkeypatch, capsys):
+def test_resume_remote_row_open_goes_through_ssh(ssh, store, monkeypatch, capsys):
+    """Package 20: the remote llmpro does the takeover there; nothing is closed from here."""
     r = row(machine='work', name='far', pid=88, where='ssh')
     monkeypatch.setattr(sessions, 'all_rows', lambda **kw: ([r], []))
     code, out, err = run(['resume', '--store', store, 'far'], capsys)
-    assert code == 1 and 'far is open in ssh on work (pid 88); close it there first' in err
-    assert ssh_calls(ssh) == []
+    assert code == 0
+    (call,) = ssh_calls(ssh)
+    assert call[1] == '--' and f'claude-code:{AID}' in call[3]
 
 
 def test_resume_remote_dry_run(ssh, store, capsys):
