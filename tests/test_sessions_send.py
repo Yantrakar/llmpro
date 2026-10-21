@@ -276,6 +276,16 @@ def test_environment_is_cleaned_and_hops_set(tools, folder, store, monkeypatch, 
     assert call['hops'] == '2' and 'VSCODE_IPC_HOOK' not in call['env']
 
 
+def test_a_send_never_carries_a_widening_variable(tools, folder, store, monkeypatch, capsys):
+    tools.make('copilot', stdout=copilot_out())
+    listing(monkeypatch, row(tool='copilot-cli', folder=str(folder)))
+    monkeypatch.setenv('COPILOT_ALLOW_ALL', 'true')
+    monkeypatch.setenv('COPILOT_MODEL', 'm')  # a plain setting the user exports goes on
+    assert go(['send', '--store', store, 'demo', 'hi'], capsys)[0] == 0
+    (call,) = tools.calls('copilot')
+    assert 'COPILOT_ALLOW_ALL' not in call['env'] and 'COPILOT_MODEL' in call['env']
+
+
 # ---------------------------------------------------------------- limits
 
 def test_hops_from_the_variable(tools, folder, store, monkeypatch, capsys):

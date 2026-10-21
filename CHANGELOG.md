@@ -89,8 +89,9 @@ All notable changes to llmpro (developed as agentspro). The format follows
 - `llmpro send TARGET TEXT` gives one message to a session that is not open, to an
   opencode session, or to a new one (`claude:new --folder DIR`), and prints the answer.
   The message goes on stdin, and no flag that allows tools or skips a permission is
-  ever added. A hop count, a limit per hour and a timeout that ends the tool and
-  everything it started keep sends from running away. From inside a session, a send
+  ever added (`COPILOT_ALLOW_ALL` is dropped from its environment). A hop count, a
+  limit per hour and a timeout that ends the tool and everything it started keep
+  sends from running away. From inside a session, a send
   to a local-only project is refused. `-n` shows what it would run. `send` is not an
   MCP tool.
 - `llmpro resume TARGET` takes over a session open in another terminal on this machine,

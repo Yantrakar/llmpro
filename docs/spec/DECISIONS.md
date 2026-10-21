@@ -242,8 +242,8 @@ takeover included, happens on that machine.
 
 To continue or ask a session llmpro runs the tool's own resume command in the session's folder, as a
 child in the same terminal, and returns when it exits. It removes the variables that tell a tool it
-runs inside another (`CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `AI_AGENT`, `COPILOT_*`,
-`OPENCODE`, `OPENCODE_*`, `VSCODE_*`, `*_VSCODE_SNAP_ORIG`, `LLMPRO_*` except the hop count, and the
+runs inside another (the names Claude Code, Copilot CLI and opencode set for their shell commands, each by
+name and never a whole `CLAUDE_CODE_*`, `COPILOT_*` or `OPENCODE_*` prefix, as the user decided on 2026-10-21, `VSCODE_*`, `*_VSCODE_SNAP_ORIG`, `LLMPRO_*` except the hop count, and the
 variables a tool sets only for its own shell commands, listed in 17), removes `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` only when
 `TERM_PROGRAM` is `vscode`, and keeps everything else (PATH, LANG, SSH_AUTH_SOCK, proxies, keys). Sessions llmpro starts must not change host settings (the user,
 2026-10-21). Copilot CLI 1.0.100 once wrote a Shift+Enter binding into VS Code's `keybindings.json` on
@@ -270,7 +270,8 @@ headless resume), an opencode session (its server), and a new session (`tool:new
 terminal is refused with where it is open. Sends carry a hop count (`LLMPRO_SEND_HOPS`); a send from
 inside a chain longer than `[sessions] max_hops` (default 2) is refused, and one session takes at most
 `[sessions] sends_per_hour` (default 20) sends. The hop count guards against loops made by mistake; it
-is not a security boundary. llmpro never passes a flag that widens what the tool may do without asking,
+is not a security boundary. llmpro never passes a flag that widens what the tool may do without asking, and a send drops such a
+variable from the environment (`COPILOT_ALLOW_ALL`),
 so a headless turn that needs a permission is denied by the tool. The message never becomes a flag: it
 goes to the tool on stdin, or after `--`. Agents never answer permission prompts. A send to a local-only
 session, or a new session in a local-only folder, from inside another session is refused, on this

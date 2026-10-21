@@ -25,6 +25,10 @@ HOUR = 3600
 DEFAULTS = {'max_hops': 2, 'sends_per_hour': 20, 'send_timeout': 900}
 MODEL = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/@+-]*')
 PROGRAMS = {'claude-code': 'claude', 'copilot-cli': 'copilot', 'opencode': 'opencode'}
+# Variables that widen what a tool may do without asking (S8). `resume` keeps them, as the user set them for
+# their own sessions; a send never carries them. Copilot CLI 1.0.101 documents COPILOT_ALLOW_ALL (all tools
+# without asking; "true" also trusts the folder). Claude Code and opencode keep permissions in settings files.
+WIDENING = ('COPILOT_ALLOW_ALL',)
 
 
 class Refused(Exception):
@@ -424,7 +428,7 @@ def local(args, store, row, text, hops, lim):
 
 
 def execute(args, row, argv, text, folder, hops, lim, model):
-    environ = launch.env(os.environ)
+    environ = {k: v for k, v in launch.env(os.environ).items() if k not in WIDENING}
     environ['LLMPRO_SEND_HOPS'] = str(hops + 1)
     before = launch.host_snapshot()
     started = time.time()

@@ -61,7 +61,9 @@ From 15 to 18: `sessions.resolve`, `sessions.all_rows`, `sessions.clean`, `launc
    - with the lock held, more than `[sessions] sends_per_hour` (default 20) sends to that session in the
      last hour, counted in `$XDG_STATE_HOME/llmpro/sends.json` (ids and times only; a new session counts
      under `<tool>:new@<folder>`): exit 1 naming the limit; otherwise this send is counted.
-4. The run uses `launch.env` with `LLMPRO_SEND_HOPS` set to hops plus one, the session's folder (or
+4. The run uses `launch.env` without the variables that widen what a tool may do without asking
+   (`send.WIDENING`: `COPILOT_ALLOW_ALL`, which Copilot CLI 1.0.101 documents; Claude Code and opencode
+   keep permissions in settings files), with `LLMPRO_SEND_HOPS` set to hops plus one, the session's folder (or
    `--folder`), `start_new_session=True`, a timeout of `[sessions] send_timeout` (default 900 seconds),
    and the host file check from 17. The answer is read from the tool's JSON when it ends and printed to stdout: Claude's `result`; the
    `content` of Copilot's last `assistant.message` line; the `part.text` of opencode's `text` lines,

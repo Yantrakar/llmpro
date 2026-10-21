@@ -24,16 +24,20 @@ PROGRAMS = {'claude-code': ('claude', '--resume'), 'copilot-cli': ('copilot', '-
 
 # Variables a tool sets for itself, or for its shell commands, that tell the next tool it runs inside one.
 # Each entry says where it was seen. A name ending in _ is a prefix; a name starting with _ is a suffix.
+# Claude Code, Copilot CLI and opencode are listed by name, not by prefix, so a setting the user exports
+# (CLAUDE_CODE_USE_BEDROCK, COPILOT_MODEL, OPENCODE_CONFIG and the like) still reaches the tool.
 NESTING = (
-    'CLAUDECODE',  # Claude Code sets it in every shell command it runs
-    'CLAUDE_PID',  # Claude Code: the pid of the session
-    'CLAUDE_EFFORT',  # Claude Code: the effort level of the session
-    'CLAUDE_CODE_',  # Claude Code: entrypoint, SSE port, and the like
-    'AI_AGENT',  # set by agents so other tools can tell
-    'COPILOT_',  # Copilot CLI: COPILOT_CLI and the settings it passes on
-    'OPENCODE',  # opencode: set in its shell commands
-    'OPENCODE_',  # opencode: its other variables
+    # Claude Code 2.1.305, in the shell commands it runs (names seen 2026-10-21)
+    'CLAUDECODE', 'CLAUDE_PID', 'CLAUDE_EFFORT', 'AI_AGENT', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_ENTRYPOINT',
+    'CLAUDE_CODE_EXECPATH', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN',
+    'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_SSE_PORT',
+    # Copilot CLI 1.0.101, in the shell commands it runs
+    'COPILOT_CLI', 'COPILOT_AGENT_SESSION_ID', 'COPILOT_CLI_BINARY_VERSION', 'COPILOT_CLI_RESOLVED_DIST_DIR',
+    'COPILOT_LOADER_PID',
+    # opencode 2.0.30, in the shell commands it runs
+    'OPENCODE', 'OPENCODE_SESSION_ID', 'OPENCODE_TERMINAL',
     'VSCODE_',  # VS Code's terminal: IPC sockets, git askpass helpers
+    'COPILOT_DEBUG_NONCE',  # VS Code's built-in Copilot extension, in its terminals
     '_VSCODE_SNAP_ORIG',  # VS Code started from a snap saves the old value of each variable under this suffix
     'LLMPRO_',  # llmpro's own; only LLMPRO_SEND_HOPS goes on
 )

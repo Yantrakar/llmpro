@@ -281,12 +281,21 @@ def test_terminal_listing_records_and_json_and_dry_run_do_not(store, state, monk
 def test_env_removes_every_nesting_variable_and_keeps_the_rest():
     env = {'PATH': '/bin', 'HOME': '/h', 'LANG': 'C', 'SSH_AUTH_SOCK': '/s', 'HTTPS_PROXY': 'p', 'TERM': 'xterm',
            'CLAUDECODE': '1', 'CLAUDE_PID': '1', 'CLAUDE_EFFORT': 'high', 'CLAUDE_CODE_ENTRYPOINT': 'cli',
-           'CLAUDE_CODE_SSE_PORT': '1', 'AI_AGENT': 'x', 'COPILOT_CLI': '1', 'COPILOT_ALLOW_ALL': '1',
-           'OPENCODE': '1', 'OPENCODE_PID': '2', 'VSCODE_PID': '3', 'VSCODE_IPC_HOOK_CLI': '/x',
+           'CLAUDE_CODE_SSE_PORT': '1', 'CLAUDE_CODE_MESSAGING_TOKEN': 't', 'AI_AGENT': 'x', 'COPILOT_CLI': '1',
+           'COPILOT_LOADER_PID': '1', 'COPILOT_DEBUG_NONCE': 'n', 'OPENCODE': '1', 'OPENCODE_SESSION_ID': '2',
+           'OPENCODE_TERMINAL': '1', 'VSCODE_PID': '3', 'VSCODE_IPC_HOOK_CLI': '/x',
            'GTK_IM_MODULE_VSCODE_SNAP_ORIG': 'a', 'LLMPRO_TOOL_PATH': '/t', 'LLMPRO_SEND_HOPS': '1', 'CLAUDE_OTHER': 'k'}
     got = launch.env(env)
     assert set(got) == {'PATH', 'HOME', 'LANG', 'SSH_AUTH_SOCK', 'HTTPS_PROXY', 'TERM', 'LLMPRO_SEND_HOPS', 'CLAUDE_OTHER'}
     assert got is not env and 'CLAUDECODE' in env  # the original is not changed
+
+
+def test_env_keeps_settings_the_user_exports():
+    mine = {'CLAUDE_CODE_USE_BEDROCK': '1', 'CLAUDE_CODE_MAX_OUTPUT_TOKENS': '8000', 'COPILOT_MODEL': 'm',
+            'COPILOT_ALLOW_ALL': '1', 'OPENCODE_CONFIG': '/c'}
+    # only the names the tools set are removed, never a whole prefix; a session the user continues runs as
+    # they set it up (send removes COPILOT_ALLOW_ALL itself)
+    assert launch.env(mine) == mine
 
 
 def test_env_term_program_kept_unless_vscode():

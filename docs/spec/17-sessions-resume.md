@@ -51,8 +51,10 @@ From 15 and 16: `sessions.Row`, `sessions.ID`, `sessions.clean`, `sessions.local
 
 4. `launch.command(row)` -> argv: `claude --resume <id>`, `copilot --resume <id>`, `opencode -s <id>`. Each program is found with `tools.which`; a missing one is an error
    naming it.
-5. `launch.env(environ)` -> a new dict: removes `CLAUDECODE`, `CLAUDE_PID`, `CLAUDE_EFFORT`, every
-   `CLAUDE_CODE_*`, `AI_AGENT`, `COPILOT_*`, `OPENCODE`, `OPENCODE_*`, `VSCODE_*` and
+5. `launch.env(environ)` -> a new dict: removes the variables Claude Code, Copilot CLI and opencode
+   set for their shell commands, each by name (Facts in 19, S10.10; never a whole `CLAUDE_CODE_*`,
+   `COPILOT_*` or `OPENCODE_*` prefix, so a setting the user exports still reaches the tool), every
+   `VSCODE_*`, `COPILOT_DEBUG_NONCE` (VS Code's Copilot extension, in its terminals) and
    `*_VSCODE_SNAP_ORIG`, and `LLMPRO_*` except `LLMPRO_SEND_HOPS`; `AGENT` when `OPENCODE` is set;
    `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`, `GIT_OPTIONAL_LOCKS` and
    `GIT_TERMINAL_PROMPT` when `COPILOT_CLI` is set (Copilot sets them for its shell commands); when
