@@ -567,9 +567,16 @@ def command(args, store):
 
 
 def act(row, args, store):
-    """Continue one resolved row here or on its machine, or say why not. -> an exit status."""
-    from . import launch, remote
-    why = launch.refusal(row)
+    """Continue one resolved row here or on its machine, or say why not. A row open on this machine goes to
+    takeover.run. -> an exit status."""
+    from . import launch, remote, takeover
+    if row.pid is not None and row.where != 'container' and row.machine == cfg.MACHINE:
+        if args.dry_run:
+            return takeover.plan(row)
+        return takeover.run(row, getattr(args, 'yes', False))
+    # a session open on another machine goes there, where that machine's llmpro does the takeover (S7)
+    remote_open = row.pid is not None and row.where != 'container' and row.machine != cfg.MACHINE
+    why = '' if remote_open else launch.refusal(row)
     if why:
         print(why, file=sys.stderr)
         return 1

@@ -10,7 +10,8 @@ harming the others.
 
 ## May edit
 
-`src/llmpro/sessions/__init__.py`, `src/llmpro/sessions/launch.py`, `src/llmpro/cli.py`, `README.md` (one
+`src/llmpro/sessions/__init__.py`, `src/llmpro/sessions/launch.py`, `src/llmpro/cli.py`, `tests/test_sessions_resume.py`
+(17's test that refused an open remote row), `README.md` (one
 paragraph in "Live sessions").
 
 ## Creates
