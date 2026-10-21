@@ -3,8 +3,8 @@ interrupted. Results go to stdout, progress to stderr."""
 import sys
 
 # What this build can do, sorted. `llmpro --version --json` lists it; later packages add to it.
-CAPABILITIES = ('check', 'check.json', 'find', 'find.json', 'mcp', 'setup', 'setup.dry-run', 'summary', 'sync',
-                'sync.dry-run', 'uninstall', 'version.json')
+CAPABILITIES = ('check', 'check.json', 'find', 'find.json', 'mcp', 'resume', 'resume.json', 'setup',
+                'setup.dry-run', 'summary', 'sync', 'sync.dry-run', 'uninstall', 'version.json')
 
 
 PLUGIN_COMMANDS = {}  # command name -> handler(args, store), filled by build_parser from the plugins
@@ -73,6 +73,16 @@ def build_parser():
     m.add_argument('conv', nargs='?', help='conversation id or file')
     m.add_argument('text', nargs='?', help='the summary')
     m.add_argument('--from', dest='from_file', metavar='FILE.jsonl', help='lines of {"id": ..., "summary": ...}')
+
+    r = sub.add_parser('resume', parents=[common], help='list the open assistant sessions on this machine')
+    r.add_argument('target', nargs='?', metavar='TARGET', help='[tool:]name-or-id-prefix[@machine] (a later version)')
+    r.add_argument('-n', '--dry-run', action='store_true', help='list only; no question')
+    r.add_argument('-y', '--yes', action='store_true', help='do not ask')
+    r.add_argument('--json', action='store_true', help='result as JSON')
+    r.add_argument('--local', action='store_true', help='this machine only (every form, for now)')
+    r.add_argument('--machine', metavar='NAME', help='only this machine')
+    r.add_argument('--watch', action='store_true', help='keep the list current (a later version)')
+    r.add_argument('--no-line', action='store_true', help='leave out the one line of content, and read no transcript')
 
     from . import plugins
     for plugin in plugins.load():
@@ -185,6 +195,9 @@ def run(argv):
     if args.cmd == 'mcp':
         from . import mcp
         return mcp.serve(store)
+    if args.cmd == 'resume':
+        from . import sessions
+        return sessions.command(args, store)
     if args.cmd == 'summary':
         if not args.from_file and not (args.conv and args.text):
             print('usage: llmpro summary CONV TEXT | llmpro summary --from FILE.jsonl', file=sys.stderr)

@@ -1,0 +1,1 @@
+{"data": [{"id": "per_1", "action": "bash", "resources": ["rm -rf build"]}]}

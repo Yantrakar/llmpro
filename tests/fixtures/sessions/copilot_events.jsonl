@@ -1,0 +1,7 @@
+{"type":"session.start","timestamp":"2026-10-21T08:00:00Z","data":{"sessionId":"22222222-2222-4222-8222-222222222222","copilotVersion":"1.0.101","context":{"cwd":"~/code/demo"}}}
+{"type":"user.message","timestamp":"2026-10-21T08:00:05Z","data":{"content":"hello"}}
+{"type":"assistant.turn_start","timestamp":"2026-10-21T08:00:06Z","data":{}}
+{"type":"assistant.message","timestamp":"2026-10-21T08:00:07Z","data":{"content":"hi"}}
+{"type":"assistant.turn_end","timestamp":"2026-10-21T08:00:08Z","data":{}}
+{"type":"session.usage_checkpoint","timestamp":"2026-10-21T08:00:09Z","data":{}}
+{"type":"model.rate_limit","timestamp":"2026-10-21T08:00:10Z","data":{}}
