@@ -76,6 +76,11 @@ All notable changes to llmpro (developed as agentspro). The format follows
   over ssh, without a password, and lists their sessions too; `--local` asks none.
   `setup -n` says whether each machine can be asked. The MCP server gains a read-only
   `sessions` tool, which leaves out every content line and every local-only session.
+- `llmpro resume TARGET` continues a session, by number, name or id, here or on its
+  machine over ssh. A session open elsewhere is refused, and two llmpro cannot continue
+  the same one at once. The tool runs in the session's folder without the variables
+  that tell it it runs inside another tool, and llmpro says if it changed an editor
+  settings file. `-n` shows what it would run.
 
 ### Changed
 
