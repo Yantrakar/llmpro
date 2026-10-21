@@ -7,8 +7,24 @@ name = "llmpro"
 dynamic = ["version"]
 description = "Keep AI assistant chats, memories and instructions in one git repo, with secrets redacted and checked."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Yantrakar" }, { name = "Sandeep Shelke" }]
 requires-python = ">=3.11"
 dependencies = []
+keywords = ["ai", "llm", "claude-code", "copilot", "codex", "opencode", "memory", "secrets", "mcp"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development",
+]
+
+[project.urls]
+Source = "https://github.com/Yantrakar/llmpro"
+Issues = "https://github.com/Yantrakar/llmpro/issues"
+Changelog = "https://github.com/Yantrakar/llmpro/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 git = ["gitpro>=0.4,<0.6"]
