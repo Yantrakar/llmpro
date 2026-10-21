@@ -81,6 +81,11 @@ All notable changes to llmpro (developed as agentspro). The format follows
   the same one at once. The tool runs in the session's folder without the variables
   that tell it it runs inside another tool, and llmpro says if it changed an editor
   settings file. `-n` shows what it would run.
+- `llmpro resume --watch` keeps the list current and lets you pick a session from it. A
+  desktop notice says when a session starts waiting for you; a session in a local-only
+  folder is not named in it. Other machines are asked over one shared ssh login each.
+  `[sessions] refresh` and `notify` in config.toml set the pace and turn notices off.
+  `--json --watch` prints the list again whenever it changes.
 
 ### Changed
 
