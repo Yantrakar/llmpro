@@ -72,6 +72,10 @@ All notable changes to llmpro (developed as agentspro). The format follows
   machine, those waiting for you first, with how long each has waited and one line of
   what it said. It reads each tool's own records and writes nothing. `--json` gives the
   same list as data, and `--no-line` leaves out every line. Live sessions need Linux.
+- `[machines]` in config.toml names other machines. `llmpro resume` asks them all at once
+  over ssh, without a password, and lists their sessions too; `--local` asks none.
+  `setup -n` says whether each machine can be asked. The MCP server gains a read-only
+  `sessions` tool, which leaves out every content line and every local-only session.
 
 ### Changed
 
