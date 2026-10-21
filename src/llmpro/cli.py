@@ -4,7 +4,7 @@ import sys
 
 # What this build can do, sorted. `llmpro --version --json` lists it; later packages add to it.
 CAPABILITIES = ('check', 'check.json', 'find', 'find.json', 'mcp', 'resume', 'resume.json', 'resume.target',
-                'resume.watch', 'setup', 'setup.dry-run', 'summary', 'sync', 'sync.dry-run', 'uninstall', 'version.json')
+                'resume.watch', 'send', 'send.json', 'setup', 'setup.dry-run', 'summary', 'sync', 'sync.dry-run', 'uninstall', 'version.json')
 
 
 PLUGIN_COMMANDS = {}  # command name -> handler(args, store), filled by build_parser from the plugins
@@ -83,6 +83,16 @@ def build_parser():
     r.add_argument('--machine', metavar='NAME', help='only this machine')
     r.add_argument('--watch', action='store_true', help='keep the list current and send a desktop notice when a session starts waiting')
     r.add_argument('--no-line', action='store_true', help='leave out the one line of content, and read no transcript')
+
+    d = sub.add_parser('send', parents=[common], help='give one message to a session that is not open, or to a new one, and print its answer')
+    d.add_argument('target', metavar='TARGET', help='[tool:]name-or-id-prefix[@machine], or tool:new[@machine]')
+    d.add_argument('text', nargs='?', metavar='TEXT', help='the message; - or nothing reads stdin (at most 64 KB)')
+    d.add_argument('--model', metavar='MODEL', help='the model for this message')
+    d.add_argument('--folder', metavar='DIR', help='for a new session: the folder it runs in (default: this folder)')
+    d.add_argument('-n', '--dry-run', action='store_true', help='show the command; run nothing, take no lock')
+    d.add_argument('--json', action='store_true', help='result as JSON')
+    d.add_argument('--hops', type=int, default=0, help=argparse.SUPPRESS)
+    d.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
 
     from . import plugins
     for plugin in plugins.load():
@@ -198,6 +208,9 @@ def run(argv):
     if args.cmd == 'resume':
         from . import sessions
         return sessions.command(args, store)
+    if args.cmd == 'send':
+        from .sessions import send
+        return send.command(args, store)
     if args.cmd == 'summary':
         if not args.from_file and not (args.conv and args.text):
             print('usage: llmpro summary CONV TEXT | llmpro summary --from FILE.jsonl', file=sys.stderr)
