@@ -22,7 +22,7 @@ import tempfile
 import time
 
 import llmpro
-from . import check, store as cfg, tools
+from . import check, store as cfg
 
 HOOK_NAMES = ('pre-commit', 'pre-merge-commit', 'pre-push')
 MERGE_DRIVER = 'llmpro merge-driver manifest %O %A %B'
