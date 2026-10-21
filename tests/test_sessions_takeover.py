@@ -449,3 +449,26 @@ def test_session_closed_since_the_list_is_not_continued(idle, tools, store, caps
     monkeypatch.setattr(sessions, 'local_rows', lambda line=True, machine=None: next(answers))
     code, out, err = run(['resume', '--store', store, '-y', 'demo'], capsys)
     assert code == 1 and 'look again' in err and child.alive() and calls(tools) == []
+
+
+def test_a_reused_pid_is_never_stopped(idle, tools, store, capsys, monkeypatch):
+    child, r = idle
+    real_verified, real_open = takeover._verified, os.pidfd_open
+    held = []
+
+    def pidfd_open(pid, *a):
+        held.append(pid)
+        return real_open(pid, *a)
+
+    def verified(row):
+        info = real_verified(row)
+        if held and info is not None:  # after the pidfd is taken: another process with this pid
+            return (info[0], info[1], info[2] + 1)
+        return info
+    monkeypatch.setattr(os, 'pidfd_open', pidfd_open)
+    monkeypatch.setattr(takeover, '_verified', verified)
+    stops = []
+    monkeypatch.setattr(takeover, '_send', lambda fd, sig: stops.append(sig) or True)
+    code, out, err = run(['resume', '--store', store, '-y', 'demo'], capsys)
+    assert code == 1 and 'not the one that was checked' in err
+    assert held == [child.pid] and stops == [] and child.alive() and calls(tools) == []

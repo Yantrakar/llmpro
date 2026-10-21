@@ -216,6 +216,9 @@ def _close(row, start, before):
         return 1
     stopped = False
     try:
+        info = _verified(row)  # the pidfd now holds this process; is it still the one checked?
+        if info is None or info[2] != start:
+            return refuse(row, ['the process is not the one that was checked'])
         if not _send(fd, signal.SIGSTOP):
             return refuse(row, ['the process is gone'])
         stopped = True
