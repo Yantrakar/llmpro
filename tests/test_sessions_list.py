@@ -662,15 +662,16 @@ def test_resume_prompt_enter_alone_and_an_answer(one_row, store, capsys, monkeyp
     monkeypatch.setattr(builtins, 'input', lambda prompt='': asked.append(prompt) or '')
     assert cli.main(['resume', '--store', store]) == 0
     assert asked == ['Continue which? (number or name, Enter to quit) ']
-    monkeypatch.setattr(builtins, 'input', lambda prompt='': '1')
-    assert cli.main(['resume', '--store', store]) == 2
-    assert 'continuing a session comes in a later version' in capsys.readouterr().err
+    answers = iter(['1', ''])
+    monkeypatch.setattr(builtins, 'input', lambda prompt='': next(answers))
+    assert cli.main(['resume', '--store', store]) == 0
+    assert 'is open in' in capsys.readouterr().err
     asked.clear()
     assert cli.main(['resume', '--store', store, '-n']) == 0 and asked == []
 
 
 def test_resume_later_forms(one_row, store, capsys):
-    for args, form in ((['x'], 'a target'), (['--watch'], '--watch')):
+    for args, form in ((['--watch'], '--watch'),):
         code, out, err = run(['resume', '--store', store] + args, capsys)
         assert (code, out) == (2, '')
         assert err == f'llmpro resume: {form} comes in a later version\n'

@@ -5,8 +5,11 @@ nothing. Everything about a process comes from `_proc` and the other small reade
 PROC, so a test can point them at a fake /proc. Nothing here reads `environ`, a `.key` file or a credential.
 """
 import dataclasses
+import glob
+import json
 import os
 import re
+import shlex
 import sys
 import time
 
@@ -367,42 +370,263 @@ def render(rows, color=False, now=None):
     return [fmt(head)] + [fmt(t, color) for t in table]
 
 
+# --- naming a session ---
+
+class TargetError(Exception):
+    """A target that names no session, or more than one. The message says which."""
+
+
+SHORT_TOOLS = {'claude': 'claude-code', 'claude-code': 'claude-code', 'copilot': 'copilot-cli',
+               'copilot-cli': 'copilot-cli', 'opencode': 'opencode'}
+MIN_PREFIX = 6
+
+
+def split_target(target, machines=()):
+    """-> (tool or None, key, machine or None) for `[tool:]key[@machine]`. A word before the first colon is a
+    tool only when it is a tool name; a word after the last @ is a machine only when it is one of `machines`
+    (so a session name may hold a colon or an @)."""
+    tool, key, machine = None, target, None
+    head, colon, rest = target.partition(':')
+    if colon and head in SHORT_TOOLS:
+        tool, key = SHORT_TOOLS[head], rest
+    front, at, back = key.rpartition('@')
+    if at and front and back in machines:
+        key, machine = front, back
+    return tool, key, machine
+
+
+def full_target(row):
+    return f'{row.tool}:{row.id}@{clean(row.machine)}'
+
+
+def _first_cwd(path):
+    for text in head_lines(path):
+        try:
+            obj = json.loads(text)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get('cwd'), str):
+            return clean(obj['cwd'])
+    return ''
+
+
+def on_disk(key, tool=None):
+    """-> rows for sessions of this machine that the tools' own records name, not open now. The folder of a
+    Claude session is the first cwd in its transcript, of a Copilot session `context.cwd` of session.start."""
+    if not ID.fullmatch(key):
+        return []  # nothing else may reach a glob pattern
+    home = cfg.home()
+    out = []
+
+    def add(kind, sid, folder, path):
+        try:
+            when = int(os.stat(path).st_mtime)
+        except OSError:
+            when = None
+        out.append(Row(kind, cfg.MACHINE, sid, '', folder, 'unknown', when, '', None, '', '', is_local(folder)))
+    if tool in (None, 'claude-code'):
+        for path in sorted(glob.glob(os.path.join(home, '.claude', 'projects', '*', key + '*.jsonl'))):
+            sid = os.path.basename(path)[:-len('.jsonl')]
+            if ID.fullmatch(sid):
+                try:
+                    add('claude-code', sid, _first_cwd(path), path)
+                except OSError:
+                    pass
+    if tool in (None, 'copilot-cli'):
+        from . import copilot
+        for path in sorted(glob.glob(os.path.join(home, '.copilot', 'session-state', key + '*', 'events.jsonl'))):
+            sid = os.path.basename(os.path.dirname(path))
+            if ID.fullmatch(sid):
+                try:
+                    add('copilot-cli', sid, clean(copilot.start_of(path)[0]), path)
+                except OSError:
+                    pass
+    return out
+
+
+def _match(key, rows):
+    """The first kind of match that has any: an exact id, an exact name, an id prefix of MIN_PREFIX or more."""
+    kinds = (lambda r: r.id == key, lambda r: bool(key) and r.name == key,
+             lambda r: len(key) >= MIN_PREFIX and r.id.startswith(key))
+    for kind in kinds:
+        hits, keys = [], set()
+        for r in rows:
+            if kind(r) and (r.tool, r.machine, r.id) not in keys:
+                keys.add((r.tool, r.machine, r.id))
+                hits.append(r)
+        if hits:
+            return hits
+    return []
+
+
+def resolve(target, rows, shown=None):
+    """-> the one Row that `target` names. `rows` are the sessions open now. A key that matches none of them is
+    looked up among the sessions llmpro has seen and in the tools' own records (those rows have no pid).
+    `shown` is the list just shown at the prompt; only then is a number a line of it. TargetError otherwise."""
+    from . import seen
+    names = {r.machine for r in rows} | {cfg.MACHINE} | {e['machine'] for e in seen.load()}
+    names |= {m.name for m in cfg.machines(cfg.STORE)} if cfg.STORE else set()
+    tool, key, machine = split_target(target, names)
+    if shown is not None and tool is None and machine is None and key.isdigit():
+        n = int(key)
+        if not 1 <= n <= len(shown):
+            raise TargetError(f'there is no line {key} in the list')
+        if shown[n - 1].state == 'not-readable' or not shown[n - 1].id:
+            raise TargetError(f'line {key} is not a session that can be continued')
+        return shown[n - 1]
+    if not key:
+        raise TargetError('the target names no session')
+
+    def wanted(r):
+        return ID.fullmatch(r.id or '') and (tool is None or r.tool == tool) and (machine is None or r.machine == machine)
+    pool = [r for r in rows if wanted(r)]
+    hits = _match(key, pool)
+    if not hits:
+        opened = {(r.tool, r.machine, r.id) for r in rows}
+        if machine in (None, cfg.MACHINE):
+            closed = seen.lookup(key, exclude=opened) + [r for r in on_disk(key, tool) if (r.tool, r.machine, r.id) not in opened]
+        else:
+            closed = seen.lookup(key, exclude=opened)
+        pool += [r for r in closed if wanted(r)]
+        hits = _match(key, [r for r in pool if r.pid is None])
+    if len(hits) > 1:
+        lines = [f'  {full_target(r)}' + (f' ({clean(r.name)})' if r.name else '') for r in hits]
+        raise TargetError(f'{clean(key)!r} matches more than one session; name one of these:\n' + '\n'.join(lines))
+    if hits:
+        return hits[0]
+    if 0 < len(key) < MIN_PREFIX and any(r.id.startswith(key) for r in pool):
+        raise TargetError(f'{clean(key)!r} is too short to be the start of an id; use at least {MIN_PREFIX} '
+                          f'characters, or the whole name')
+    hint = ''
+    back = key.rpartition('@')[2]
+    if '@' in key and back and back not in names:
+        hint = f' ({clean(back)} is not a machine in [machines])'
+    raise TargetError(f'no session matches {clean(key)!r}{hint}')
+
+
+# --- the command ---
+
+def _interactive():
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _listing(args, store):
+    """-> (rows, errors) as `llmpro resume` lists them."""
+    if args.local or (args.machine == cfg.MACHINE):
+        return local_rows(line=not args.no_line), []
+    if not args.json and sys.stderr.isatty():
+        asked = [m for m in cfg.machines(store) if not m.error]
+        if asked:
+            print(f'asking {len(asked)} machines...', file=sys.stderr)
+    return all_rows(machine=args.machine, line=not args.no_line)
+
+
 def command(args, store):
-    """llmpro resume [-n] [-y] [--json] [--local] [--machine NAME] [--no-line]: the list on this machine."""
+    """llmpro resume [-n] [-y] [--json] [--local] [--machine NAME] [--no-line] [TARGET]: the list of open
+    sessions, or continue one."""
     from .. import jsonout
     if not supported():
         print('live sessions need Linux', file=sys.stderr)
         return 2
-    for form, used in (('a target', args.target), ('--watch', args.watch)):
-        if used:
-            print(f'llmpro resume: {form} comes in a later version', file=sys.stderr)
-            return 2
+    if args.watch:
+        print('llmpro resume: --watch comes in a later version', file=sys.stderr)
+        return 2
     cfg.configure(store, required=False)
-    errors = []
-    if args.local or (args.machine == cfg.MACHINE):
-        rows = local_rows(line=not args.no_line)
-    else:
-        if not args.json and sys.stderr.isatty():
-            asked = [m for m in cfg.machines(store) if not m.error]
-            if asked:
-                print(f'asking {len(asked)} machines...', file=sys.stderr)
-        rows, errors = all_rows(machine=args.machine, line=not args.no_line)
-    if args.json:
-        jsonout.emit('resume', {'format': FORMAT, 'machine': cfg.MACHINE, 'rows': [r.as_dict() for r in rows],
-                                'errors': errors})
-        return 0
-    rows = rows + [dataclasses.replace(bad('-', e['machine'], '', e['error']), name='-') for e in errors]
-    if not rows:
-        print('no open sessions', file=sys.stderr)
-        return 0
-    print('\n'.join(render(rows, color=use_color())))
-    if args.dry_run or not (sys.stdin.isatty() and sys.stdout.isatty()):
-        return 0
+    if args.target:
+        return resume_target(args, store)
+    while True:
+        rows, errors = _listing(args, store)
+        if args.json:
+            jsonout.emit('resume', {'format': FORMAT, 'machine': cfg.MACHINE, 'rows': [r.as_dict() for r in rows],
+                                    'errors': errors})
+            return 0
+        rows = rows + [dataclasses.replace(bad('-', e['machine'], '', e['error']), name='-') for e in errors]
+        if not rows:
+            print('no open sessions', file=sys.stderr)
+            return 0
+        print('\n'.join(render(rows, color=use_color())))
+        if args.dry_run or not _interactive():
+            return 0
+        from . import seen
+        try:
+            seen.record(rows)
+        except OSError:
+            pass
+        try:
+            answer = input('Continue which? (number or name, Enter to quit) ').strip()
+        except EOFError:
+            return 0
+        if not answer:
+            return 0
+        try:
+            row = resolve(answer, rows, shown=rows)
+        except TargetError as exc:
+            print(str(exc), file=sys.stderr)
+            continue
+        act(row, args, store)
+
+
+def act(row, args, store):
+    """Continue one resolved row here or on its machine, or say why not. -> an exit status."""
+    from . import launch, remote
+    why = launch.refusal(row)
+    if why:
+        print(why, file=sys.stderr)
+        return 1
+    if row.machine == cfg.MACHINE:
+        if args.dry_run:
+            try:
+                argv = launch.command(row)
+            except launch.Error as exc:
+                print(str(exc), file=sys.stderr)
+                return 1
+            print(f'would continue {row.tool} {launch.label(row)}\nmachine: {cfg.MACHINE}\nfolder: {row.folder}\n'
+                  f'run: {" ".join(shlex.quote(w) for w in argv)}')
+            return 0
+        return launch.run(row)
+    m = remote.machine_named(store, row.machine)
+    if m is None or m.error:
+        print(m.error if m else f'{clean(row.machine)} is not a machine in [machines]', file=sys.stderr)
+        return 1
+    return act_remote(m, f'{row.tool}:{row.id}', args, folder=row.folder)
+
+
+def act_remote(m, target, args, folder=''):
+    from . import launch
     try:
-        answer = input('Continue which? (number or name, Enter to quit) ').strip()
-    except EOFError:
+        argv = launch.remote_argv(m, target)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if args.dry_run:
+        print(f'would continue {clean(target)} on {m.name}\nmachine: {m.name}\nfolder: {folder or "(on that machine)"}\n'
+              f'run: {" ".join(shlex.quote(w) for w in argv)}')
         return 0
-    if not answer:
-        return 0
-    print('continuing a session comes in a later version', file=sys.stderr)
-    return 2
+    return launch.run_remote(m, target)
+
+
+def resume_target(args, store):
+    """llmpro resume TARGET: name the session, then continue it here or on its machine."""
+    machines = cfg.machines(store)
+    names = {m.name for m in machines} | {cfg.MACHINE}
+    tool, key, machine = split_target(args.target, names)
+    if machine and machine != cfg.MACHINE:
+        from . import remote
+        m = remote.machine_named(store, machine)
+        if m is None or m.error:
+            print(m.error if m else f'{machine} is not a machine in [machines]', file=sys.stderr)
+            return 2
+        return act_remote(m, args.target[:len(args.target) - len(machine) - 1], args)
+    errors = []
+    if args.local or machine == cfg.MACHINE or args.machine == cfg.MACHINE:
+        rows = local_rows(line=False)
+    else:
+        rows, errors = all_rows(machine=args.machine, line=False)
+    try:
+        row = resolve(args.target, rows)
+    except TargetError as exc:
+        for e in errors:
+            print(f'warning: {e["error"]}', file=sys.stderr)
+        print(str(exc), file=sys.stderr)
+        return 2
+    return act(row, args, store)

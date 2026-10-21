@@ -39,6 +39,12 @@ def command(m, args, control=None):
     return argv + ['--', m.ssh, remote_string(m, args)]
 
 
+def machine_named(store, name):
+    """-> the Machine called `name` in [machines], or None."""
+    from .. import store as cfg
+    return next((m for m in cfg.machines(store) if m.name == name), None)
+
+
 def read_row(d, name):
     """A remote row as this side keeps it: parsed, checked, cleaned, with machine and line set here."""
     row = Row.from_dict(d)
