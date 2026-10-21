@@ -93,6 +93,12 @@ All notable changes to llmpro (developed as agentspro). The format follows
   everything it started keep sends from running away. From inside a session, a send
   to a local-only project is refused. `-n` shows what it would run. `send` is not an
   MCP tool.
+- `llmpro resume TARGET` takes over a session open in another terminal on this machine,
+  but only while it is idle: waiting for a reply for at least 10 seconds, its terminal
+  untouched for a minute, and no child processes. It asks once (`-y` answers yes), stops
+  the process, checks again, then sends SIGHUP and continues the session here. It never
+  sends SIGKILL. A session on another machine is taken over by that machine's llmpro.
+  `-n` shows the check and the plan.
 
 ### Changed
 
