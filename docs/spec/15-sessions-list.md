@@ -40,7 +40,7 @@ made from real ones with every name, path and id replaced: `~/code/demo`, `demo`
 3. `sessions.clean(text, width=None)` removes control characters (C0, C1, and whole ESC
    sequences), joins lines with a space and, when `width` is given, cuts to it. Every string printed from
    a row goes through it (S4).
-4. `sessions.ID = re.compile(r'[A-Za-z0-9-]+')`. A record whose id does not fully match is
+4. `sessions.ID = re.compile(r'[A-Za-z0-9_-]+')` (opencode ids such as `ses_...` carry an underscore). A record whose id does not fully match is
    `not-readable` (S11).
 
 ### Adapters
