@@ -2,7 +2,6 @@
 never calls the server's port, and never reads opencode's database or credential. Checked against CHECKED."""
 import json
 import os
-import re
 import subprocess
 
 from .. import sessions as S
@@ -11,7 +10,6 @@ from .. import tools
 TOOL = 'opencode'
 CHECKED = ('2.0.30',)
 TIMEOUT = 3
-OC_ID = re.compile(r'[A-Za-z0-9_-]+')  # opencode ids carry an underscore; still safe in a file name
 
 
 class ApiError(Exception):
@@ -103,13 +101,13 @@ def _rows(exe, machine, line):
         version = ''
     out = []
     for sid, how in wanted.items():
-        if not OC_ID.fullmatch(sid):
+        if not S.ID.fullmatch(sid):
             out.append(S.bad(TOOL, machine, '', 'the session id has characters that are not allowed'))
             continue
         try:
             out.append(_row(exe, machine, sid, how, version, line))
         except ApiError as exc:
-            out.append(S.bad(TOOL, machine, sid, str(exc), id_re=OC_ID))
+            out.append(S.bad(TOOL, machine, sid, str(exc)))
     return out
 
 
@@ -117,7 +115,7 @@ def _row(exe, machine, sid, how, version, line):
     info = _data(api(exe, 'session.get', sessionID=sid))
     if not isinstance(info, dict) or not isinstance(info.get('location'), dict) \
             or not isinstance(info['location'].get('directory'), str):
-        return S.bad(TOOL, machine, sid, 'the session has no folder', id_re=OC_ID)
+        return S.bad(TOOL, machine, sid, 'the session has no folder')
     folder = info['location']['directory']
     when = info.get('time') if isinstance(info.get('time'), dict) else {}
     since = S.parse_time(when.get('idle') if when.get('idle') is not None else when.get('updated'))

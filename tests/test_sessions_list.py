@@ -151,7 +151,7 @@ def test_clean_removes_controls_escapes_and_joins_lines():
     assert sessions.clean('a\x00b\x7fc\x85d\x9b31me') == 'abc de'
     assert sessions.clean('abcdef', 3) == 'abc'
     assert sessions.clean(None) == ''
-    assert sessions.ID.fullmatch('ab-12') and not sessions.ID.fullmatch('a/b') and not sessions.ID.fullmatch('')
+    assert sessions.ID.fullmatch('ab-12') and sessions.ID.fullmatch('ses_ab12') and not sessions.ID.fullmatch('a/b') and not sessions.ID.fullmatch('')
 
 
 def test_proc_reads_program_start_and_never_comm_when_cmdline_exists(proc):
@@ -192,7 +192,11 @@ def test_claude_dead_reused_and_node(home, proc):
     proc.add(3, ['/usr/bin/node', 'cli.js'], start=5000)  # node runs it
     put_claude(home, pid=4, sessionId='55555555-5555-4555-8555-555555555555')
     proc.add(4, ['bash'], start=5000)  # reused by another program
-    assert [r.pid for r in claude.rows('work')] == [3]
+    put_claude(home, pid=5, sessionId='66666666-6666-4666-8666-666666666666', procStart=None)
+    proc.add(5, ['node', 'other.js'], start=5000)  # node, and no procStart to prove it is Claude
+    put_claude(home, pid=6, sessionId='77777777-7777-4777-8777-777777777777', procStart=None)
+    proc.add(6, ['claude'], start=5000)  # claude itself, an older record without procStart
+    assert sorted(r.pid for r in claude.rows('work')) == [3, 6]
 
 
 def test_claude_process_of_another_user_is_skipped(home, proc, monkeypatch):

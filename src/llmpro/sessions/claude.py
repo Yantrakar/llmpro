@@ -42,6 +42,8 @@ def _live_pid(pid, domain, start):
     info = S._proc(here)
     if info is None or info[0] != os.getuid() or info[1] not in PROGRAMS:
         return None, False
+    if start is None and info[1] != 'claude':
+        return None, False  # a node process proves nothing without procStart
     if start is not None and str(start) != str(info[2]):
         return None, False
     return here, container

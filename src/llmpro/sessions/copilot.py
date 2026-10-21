@@ -122,7 +122,7 @@ def _session_folder(pid, folders, state_dir):
     if with_log:
         return max(with_log, key=lambda f: _mtime(os.path.join(f, 'events.jsonl')))
     wanted = _resume_id(S._cmdline(pid))
-    if not wanted or not re.fullmatch(r'[A-Za-z0-9-]+', wanted):
+    if not wanted or not S.ID.fullmatch(wanted):
         return None
     matches = [f for f in glob.glob(os.path.join(state_dir, wanted + '*'))
                if os.path.isfile(os.path.join(f, 'events.jsonl'))]

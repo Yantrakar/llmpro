@@ -283,7 +283,7 @@ command, not an MCP tool: the MCP server stays read-only (I4).
 A resume, a send and a takeover each hold a lock for the session
 (`$XDG_STATE_HOME/llmpro/live/<tool>-<id>.lock`, `fcntl.flock`) for their whole run. After taking it,
 llmpro reads that one session again and refuses if it is now open, so a choice made from a list shown
-minutes earlier cannot start a second writer. Ids are checked against `[A-Za-z0-9-]+` before they name a
+minutes earlier cannot start a second writer. Ids are checked against `[A-Za-z0-9_-]+` before they name a
 file.
 
 ## S9. Hosting, key bindings and approvals wait for version 2

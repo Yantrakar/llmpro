@@ -14,7 +14,7 @@ from .. import store as cfg
 
 FORMAT = 'llmpro-sessions.v1'
 STATES = ('needs-approval', 'needs-reply', 'working', 'unknown', 'not-readable')
-ID = re.compile(r'[A-Za-z0-9-]+')
+ID = re.compile(r'[A-Za-z0-9_-]+')  # opencode ids carry an underscore
 TOOLS = ('claude-code', 'copilot-cli', 'opencode')
 PROC = '/proc'  # tests point this at a fake tree
 MACHINE_ID_FILE = '/etc/machine-id'
@@ -267,9 +267,9 @@ def make_name(text):
     return clean(redact(text or ''))
 
 
-def bad(tool, machine, id, error, folder='', paths=None, id_re=ID):
+def bad(tool, machine, id, error, folder='', paths=None):
     """The row for a record this llmpro cannot read. An id that does not match is left out."""
-    return Row(tool, machine, id if isinstance(id, str) and id_re.fullmatch(id) else '', '', clean(folder), 'not-readable', None, '', None,
+    return Row(tool, machine, id if isinstance(id, str) and ID.fullmatch(id) else '', '', clean(folder), 'not-readable', None, '', None,
                '', '', False, clean(error), paths)
 
 
