@@ -160,3 +160,159 @@ executable is listed with the `chmod +x` that would place it.
 `llmpro uninstall` replaces each link setup made with a copy of what it pointed to, so a tool keeps the
 agents and hooks it had, and uninstalls the two Claude Code plugins and the marketplace. The store keeps
 its files.
+
+## Round 4 (2026-10-21): live sessions, version 1
+
+One place to see which assistant sessions are waiting for the user, on this machine and on the
+machines named in `[machines]`, and to continue them. The facts below were checked on 2026-10-21 against
+Claude Code 2.1.293 and 2.1.305, Copilot CLI 1.0.100 and 1.0.101, and opencode 2.0.30, with throwaway
+sessions. Packages 15 to 20 build it. Existing tools that do this (agent-deck, claude-squad, ccmanager,
+Agent of Empires) need tmux, start every session themselves, or are far too large; llmpro builds its own.
+
+## S1. One command, `llmpro resume`
+
+`llmpro resume` with no target lists the open sessions on every machine, those waiting for the user
+first. `llmpro resume TARGET` continues one session in this terminal. `--watch` keeps the list current
+and sends a desktop notice when a session starts waiting. `-n` and `--json` give the list and change
+nothing. A target is `[tool:]name-or-id-prefix[@machine]`; a name that matches more than one session is
+an error that lists the matches. On a terminal, the list ends with one question, "Continue which?",
+which takes a number or a name; Enter alone quits. There is no separate list, attach or inbox command.
+Live sessions need Linux (`/proc`, pidfd); on other systems `resume` and `send` say so and exit 2.
+
+## S2. llmpro reads each tool's own records and writes nothing into them
+
+| Tool | Open sessions | State |
+|---|---|---|
+| Claude Code | `~/.claude/sessions/<pid>.json` (`sessionId`, `cwd`, `name`, `status`, `pid`, `procStart`, `version`) | `status`: `idle`, `busy`, `waiting` |
+| Copilot CLI | `~/.copilot/session-state/<id>/inuse.<pid>.lock`, and a `copilot` process whose command line names `--resume <id>` (a resumed session takes its lock only after its first prompt) | the last known event type in `events.jsonl` |
+| opencode | its server, through `opencode` itself (`session.active`, `permission.request.list`) | the server's answer |
+| Codex | not listed in version 1: on these machines it runs only inside the VS Code extension | |
+
+Each tool has one adapter. It states the tool versions it was checked against. A record whose keys are
+missing or of the wrong type gives the row `not-readable`, never a guess. llmpro never opens
+`~/.claude/sessions/*.key`, never uses `messagingSocketPath`, and never reads another process's
+environment. A pid is trusted only when `/proc/<pid>` exists, belongs to the user, runs the tool, and
+(for a record that has `procStart`) started when the record says.
+
+## S3. Shared states
+
+Every row has one of these states, whatever the tool calls it:
+
+| State | Meaning | Claude Code | Copilot CLI |
+|---|---|---|---|
+| `needs-approval` | a permission prompt is up | `waiting` | `permission.requested` not yet followed by `permission.completed` |
+| `needs-reply` | the turn is over; it waits for the next message | `idle` | `assistant.turn_end`, then only bookkeeping events (`session.usage_checkpoint`, `model.*`) |
+| `working` | it is busy | `busy` | any other last known event |
+| `unknown` | open, but the state cannot be told | | an unknown last event type, or none |
+| `not-readable` | the record is in a form this llmpro does not know | | |
+
+Rows are sorted `needs-approval`, `needs-reply`, `working`, `unknown`, `not-readable`, then by time in
+that state, longest first.
+
+## S4. Content stays out of the list where it must
+
+A row shows the tool, machine, name, folder, state and time in that state. For `needs-approval` and
+`needs-reply` it may also show one line: the permission's own summary or the start of the last
+assistant message, redacted (`redact.redact`) and with control characters removed. A session whose
+folder is local-only (`store.is_local_project`) shows its state and no line, and its transcript is not
+opened. A remote machine is asked with `--no-line` and sends its rows without the line. The MCP server
+gets the `sessions` tool, read-only; its gate removes every line and every local-only row itself, as
+`gate_find` does (I4, H2). A desktop notice names the tool, the session and the machine, and for a
+local-only session only the tool and the machine (notices can reach a phone). Every string llmpro prints
+from a record (name, folder, line, anything from another machine) has its control characters removed.
+Nothing about live sessions is written to the store.
+
+## S5. Machines are named in config.toml and reached with plain ssh
+
+`[machines]` in the store's `config.toml` maps a name to an ssh target. The entry for this machine is
+skipped. An entry that is not well formed (a target starting with `-`, a character outside
+`[A-Za-z0-9._@-]`) is an error row for that machine, never an exit, so it cannot break `sync` or `find`.
+llmpro runs `ssh -T -o BatchMode=yes -o ConnectTimeout=5 -- <target> <llmpro> resume --local --json
+--no-line` on each machine at once and waits at most 10 seconds. The remote command is built only from
+words quoted with `shlex.quote`; a path under the home folder is sent as `"$HOME"/` followed by the quoted
+rest. The asking side sets each remote row's `machine` to the `[machines]` name. A machine that cannot be asked is one row
+saying why, never a failure of the whole list. The remote answer must carry
+`"format": "llmpro-sessions.v1"`; any other format is a row naming `pipx upgrade llmpro`. llmpro never
+asks for an ssh password in a list: a machine that needs one says so. `--watch` opens one shared ssh
+login per machine at its start (ssh ControlMaster, as `sync.Hub` does) and closes it when it ends.
+Continuing a remote session runs `ssh -t -- <target> <llmpro> resume TARGET`: everything after that, a
+takeover included, happens on that machine.
+
+## S6. llmpro starts tools as they would start by hand, and leaves the host as it was
+
+To continue or ask a session llmpro runs the tool's own resume command in the session's folder, as a
+child in the same terminal, and returns when it exits. It removes the variables that tell a tool it
+runs inside another (`CLAUDECODE`, `CLAUDE_CODE_*` and `CLAUDE_PID`, `COPILOT_*`, `OPENCODE_*`, `VSCODE_*`,
+`*_VSCODE_SNAP_ORIG`, `LLMPRO_*` except the hop count), removes `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` only when
+`TERM_PROGRAM` is `vscode`, and keeps everything else (PATH, LANG, SSH_AUTH_SOCK, proxies, keys). Sessions llmpro starts must not change host settings (the user,
+2026-10-21). Copilot CLI 1.0.100 once wrote a Shift+Enter binding into VS Code's `keybindings.json` on
+its first start; its trigger is not known. So llmpro hashes a short list of editor settings files before
+it starts a tool and after the tool exits. If one changed while the tool ran, it says so, shows the
+`diff` against the copy the tool kept, and how to put it back; it does not put it back itself (rule 7),
+because the editor or the user may have changed the file too.
+
+## S7. Taking over a session open elsewhere, only while idle
+
+When the target is open in another terminal, llmpro closes it there and continues it here, only when it
+is `needs-reply` and has been for at least 10 seconds, its terminal has had no keystroke for at least 60
+seconds, it has no child processes, and no other llmpro is taking it (a lock per session). It shows what
+it will close and asks once. It holds the process through a pidfd, stops it, checks again, then sends
+SIGHUP and SIGCONT. It never sends SIGKILL. A session in `needs-approval` or `working` is never taken.
+There is no undo for a closed process, so llmpro prints the command that continues the session again
+instead.
+
+## S8. One session can ask another, with limits
+
+`llmpro send TARGET TEXT` gives one message to a session and prints its answer. It works only where
+there is a channel that cannot collide with a person typing: a session that is not open (the tool's own
+headless resume), an opencode session (its server), and a new session (`tool:new`). A session open in a
+terminal is refused with where it is open. Sends carry a hop count (`LLMPRO_SEND_HOPS`); a send from
+inside a chain longer than `[sessions] max_hops` (default 2) is refused, and one session takes at most
+`[sessions] sends_per_hour` (default 20) sends. The hop count guards against loops made by mistake; it
+is not a security boundary. llmpro never passes a flag that widens what the tool may do without asking,
+so a headless turn that needs a permission is denied by the tool. The message never becomes a flag: it
+goes to the tool on stdin, or after `--`. Agents never answer permission prompts. A send to a local-only
+session, or a new session in a local-only folder, from inside another session is refused, on this
+machine and on any other; the user at a terminal may still send one. Like the hop count, this check stops
+mistakes, not a determined caller. `send` is a
+command, not an MCP tool: the MCP server stays read-only (I4).
+
+## S11. One llmpro at a time per session
+
+A resume, a send and a takeover each hold a lock for the session
+(`$XDG_STATE_HOME/llmpro/live/<tool>-<id>.lock`, `fcntl.flock`) for their whole run. After taking it,
+llmpro reads that one session again and refuses if it is now open, so a choice made from a list shown
+minutes earlier cannot start a second writer. Ids are checked against `[A-Za-z0-9-]+` before they name a
+file.
+
+## S9. Hosting, key bindings and approvals wait for version 2
+
+Version 1 runs tools in the user's terminal and holds no pty of its own. Not in version 1: `llmpro run`
+and a detached host that survives a dropped ssh, one set of key bindings inside llmpro (none are written
+to the host, ever), approving permission prompts from the list, typing into an open session, Claude
+Code's peer channel, and Codex. The takeover (S7) stays in version 1, as its last package and one that
+can be left out, because the sessions the user wants to reach are already open in editor panes;
+`llmpro run` would help only sessions started after it exists.
+
+## S10. Facts to check before building
+
+The integrator checks these with throwaway sessions before the wave that needs them, and records the
+answer in that package file:
+1. (15) The Copilot lock file: a real lock in `/proc/locks`, or a name only.
+2. (15) opencode 2.0.30: the exact `opencode` command line that returns `session.active` and
+   `permission.request.list` as JSON, whether its server needs a password, and whether `opencode attach`
+   lets two clients share a session (then opencode needs no takeover).
+3. (17) Claude Code: `--resume` keeps the session id and `-n` name; what a half-typed draft becomes on
+   SIGHUP (Copilot as well).
+4. (17) What made Copilot write `keybindings.json` (`TERM_PROGRAM`, a missing config, or its first
+   start), and the list of settings files S6 hashes.
+5. (19) The headless forms: `claude -p --resume <id>`, `copilot -p --resume <id>` and opencode's, with
+   `--model`; what each records as the model really used.
+6. (20) Whether logind kills a user's processes at logout on each machine (`KillUserProcesses`).
+7. (15) The unit of Claude's `procStart` against the start time in `/proc/<pid>/stat`; the program name
+   of a Copilot CLI process (`copilot` or `node`).
+8. (17) Where a closed Claude session's folder can be read (the transcript's `cwd`).
+9. (19) Which tools read the prompt from stdin, and which print the session id in a JSON output; what
+   Copilot records as `selectedModel` after a model change.
+10. (19) The variables each tool (Claude Code, Copilot CLI, opencode, Codex) sets for the shell commands
+    it runs, so llmpro can tell a call from inside a session (`launch.INSIDE`).

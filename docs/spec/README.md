@@ -9,6 +9,8 @@ gitpro's code. `01-design.md` is the design of agentspro itself (2026-10-16). Th
 | `DECISIONS.md` | The decisions this round rests on (I1 to I8; round 2: H1 to H4) |
 | `02-rename.md` ... `08-bundle.md` | One work package each |
 | `09-lessons.md` ... `12-harness-manifest.md` | Round 2 (2026-10-20): ideas from harness2 |
+| `13-harness-place.md`, `14-harness-claude-plugin.md` | Round 3 (2026-10-20): setup places the harness |
+| `15-sessions-list.md` ... `20-sessions-takeover.md` | Round 4 (2026-10-21): live sessions, version 1 (S1 to S11) |
 
 Each package file is self-contained: an agent that has read this file, `00-existing.md`,
 `DECISIONS.md` and its own package file has everything it needs. Where a package uses something an
@@ -28,6 +30,16 @@ Status: draft, 2026-10-17. Proposed by Claude while the user was away; the user 
 | 6 | 11 harness commit per chat | alone |
 | 7 | 13 setup places the harness | alone |
 | 8 | 14 Claude Code hooks and guardrails through a store plugin | alone |
+| 9 | 15 sessions on this machine (`llmpro resume` lists) | alone |
+| 10 | 16 sessions on other machines, MCP `sessions` | alone |
+| 11 | 17 continue a session | alone |
+| 12 | 18 watch and notices | alone |
+| 13 | 19 send a message to a session | alone |
+| 14 | 20 take over an idle session (can be left out) | alone |
+
+Round 4 runs one package per wave: each builds on the one before, and they share `sessions/__init__.py`
+and `cli.py`. Before a wave, the integrator checks the facts DECISIONS S10 lists for it and writes them
+into the package's "Facts" section.
 
 After each wave the integrator (not a package) merges the branches, runs the whole suite and edits
 `CHANGELOG.md`. No package edits `CHANGELOG.md`.
@@ -53,7 +65,8 @@ After each wave the integrator (not a package) merges the branches, runs the who
 8. **`--json` uses the envelope** `{"ok": bool, "command": "<name>", ...}` from 02 (`llmpro.jsonout`).
    Keys that a command printed before stay, with the same meaning.
 9. **Exit codes**: 0 done, 1 a check or step failed or something is missing (`-n`), 2 usage or other
-   error, 130 interrupted.
+   error, 130 interrupted. One exception: `llmpro resume TARGET` runs an assistant in the terminal and exits
+   with that assistant's own status, as `exec` would.
 10. **No personal data in the repo**: no names, hosts, machine paths or client words in code, tests,
     templates or docs. Use `example.com`, `work`, `personal`, `~/code/...`.
 11. **Plain English** in messages and docs: short sentences, no em dashes.
