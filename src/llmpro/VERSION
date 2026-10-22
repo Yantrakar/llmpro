@@ -1,2 +1,3 @@
+0.1.2  2026-10-22  the push guard keeps to a time budget; the leak cache survives a release
 0.1.1  2026-10-22  releases run by releasepro; the version in one file
 0.1.0  2026-10-22  first release on PyPI

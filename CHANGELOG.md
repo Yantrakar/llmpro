@@ -4,6 +4,20 @@ All notable changes to llmpro (developed as agentspro). The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). A release needs a section
 `## X.Y.Z (YYYY-MM-DD)` for its version; see docs/releasing.md.
 
+## 0.1.2 (2026-10-22)
+
+### Fixed
+
+- The push guard keeps to a time budget of 20 seconds. A push could wait many minutes
+  while the leak check read every raw log again, until the remote closed the
+  connection and the push failed. Past the budget, the leak check matches what the
+  cache holds, says so, and saves what it read, so the next push goes on from there;
+  the check of secret formats always runs in full. `llmpro check` brings the cache up
+  to date.
+- The leak cache is kept across releases. It was dropped at every upgrade, so the first
+  check after one read every raw log again. It is dropped only when the rules for what
+  is collected change. The first check after upgrading to 0.1.2 still reads them once.
+
 ## 0.1.1 (2026-10-22)
 
 ### Changed
