@@ -3,6 +3,8 @@ plugin. Real git in temporary repos with a bare repo as the remote; core.hooksPa
 holding a pre-push that runs `python -m llmpro hook push-guard`. No real gitpro and no real home.
 
 Fake secrets are built at run time, so this file holds no string that looks like a real token."""
+import hashlib
+import inspect
 import io
 import json
 import multiprocessing
@@ -14,6 +16,7 @@ import time
 
 import pytest
 
+import llmpro
 from llmpro import check, cli, pushguard
 from llmpro.store import MACHINE
 
@@ -248,6 +251,117 @@ def test_guard_is_fast_on_a_small_push(repo, env, monkeypatch):
     took = time.perf_counter() - t
     print(f'GUARD_SECONDS {took:.3f}')
     assert took < 2
+
+
+# ---- the leak cache across releases, and the guard's time budget (spec 22) -----------------------------
+# sha256 of the code that decides what is collected and how it is hashed, for each RULES_VERSION.
+RULES_PIN = {4: 'b64a26c303fc7a23af12dab9a792677114a16f05449687f8b37ce69853637ad3'}
+
+
+def rules_code_hash():
+    src = inspect.getsource(check)
+    parts = [src[src.index('# ---- part 1 patterns'):src.index('THIS_MACHINE = MACHINE')]]
+    parts += [inspect.getsource(f) for f in (check.public_prefix, check.piece_ok, check.hashed_entry)]
+    return hashlib.sha256('\n'.join(parts).encode()).hexdigest()
+
+
+def test_collection_code_is_pinned_to_its_rules_version():
+    assert rules_code_hash() == RULES_PIN.get(check.RULES_VERSION), (
+        'The code that decides what the leak check collects changed. If the change alters what is collected, '
+        'raise check.RULES_VERSION (the cache is then collected again); either way record the new hash here: '
+        f'RULES_PIN[{check.RULES_VERSION}] = {rules_code_hash()!r}')
+
+
+def test_the_cache_is_keyed_on_the_rules_not_the_release():
+    assert check.CACHE_VERSION == f'rules{check.RULES_VERSION}'
+    assert llmpro.__version__ not in check.CACHE_VERSION
+
+
+def test_a_cache_of_other_rules_is_dropped(store, env, monkeypatch):
+    cdir = check.cache_dir(store)
+    _, cache = check.load_cache(cdir)
+    cache['sources'] = {'x': {'sig': [1], 'offset': None, 'tail': None, 'values': []}}
+    check.save_cache(cdir, cache)
+    assert check.load_cache(cdir)[1]['sources']
+    monkeypatch.setattr(check, 'CACHE_VERSION', f'rules{check.RULES_VERSION + 1}')
+    assert check.load_cache(cdir)[1]['sources'] == {}
+
+
+def long_session(home, n=40):
+    """The raw session file again, with LEAK only on its last line."""
+    raw = home / 'raw' / 's1.jsonl'
+    raw.write_text(''.join(json.dumps({'text': f'line {i}'}) + '\n' for i in range(n))
+                   + json.dumps({'password': LEAK}) + '\n')
+    return raw
+
+
+def cached(store, raw):
+    cache = json.load(open(os.path.join(check.cache_dir(store), 'cache.json'), encoding='utf-8'))
+    return cache['sources'].get(str(raw))
+
+
+def test_no_time_left_checks_what_is_cached_and_says_so(repo, env, store, home, monkeypatch, capsys):
+    raw = long_session(home)
+    sha = commit(repo, 'a.txt', f'value {LEAK}\n')
+    line = f'refs/heads/main {sha} refs/heads/main {"0" * 40}\n'
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(pushguard, 'BUDGET', 0)
+    assert pushguard.run([], io.StringIO(line)) == 0
+    err = capsys.readouterr().err
+    assert 'no time to read 1 raw logs in full' in err and 'llmpro check' in err and LEAK not in err
+    assert cached(store, raw) is None  # not started, so nothing cached for it
+    monkeypatch.setattr(pushguard, 'BUDGET', 20)
+    assert pushguard.run([], io.StringIO(line)) == 1
+    err = capsys.readouterr().err
+    assert 'push stopped' in err and 'no time' not in err and LEAK not in err
+
+
+def test_no_time_left_still_stops_a_known_format(repo, env, home, monkeypatch, capsys):
+    long_session(home)
+    sha = commit(repo, 'a.txt', f'x = "{TOKEN}"\n')
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(pushguard, 'BUDGET', 0)
+    assert pushguard.run([], io.StringIO(f'refs/heads/main {sha} refs/heads/main {"0" * 40}\n')) == 1
+    err = capsys.readouterr().err
+    assert 'push stopped' in err and '[github]' in err and 'no time' in err and TOKEN not in err
+
+
+class Clock:
+    """time for check.py whose monotonic() moves one second each time it is read."""
+    def __init__(self):
+        self.t = 0
+
+    def monotonic(self):
+        self.t += 1
+        return self.t
+
+
+def test_a_log_cut_short_is_cached_part_way_and_read_on_next_time(store, home, env, monkeypatch):
+    raw = long_session(home)
+    monkeypatch.setattr(check, 'time', Clock())
+    late = []
+    assert check.scan_texts(store, {'t': f'value {LEAK}\n'}, deadline=4, late=late) == []
+    assert late == [str(raw)]
+    entry = cached(store, raw)
+    assert 0 < entry['offset'] < raw.stat().st_size and entry['sig'][1] == entry['offset']
+    late = []
+    hits = check.scan_texts(store, {'t': f'value {LEAK}\n'}, late=late)
+    assert [h.label for h in hits] == ['t'] and late == []
+    assert cached(store, raw)['offset'] == raw.stat().st_size
+
+
+def test_the_fewest_bytes_are_read_first_under_a_deadline(store, home, env, monkeypatch):
+    big = long_session(home, n=400)
+    small = home / 'raw' / 's2.jsonl'
+    small.write_text(json.dumps({'password': LEAK}) + '\n')
+    rows = [{'machine': MACHINE, 'status': 'imported', 'source_path': str(p), 'tool': 'claude-code', 'kind': 'chat',
+             'original_id': p.stem} for p in (big, small)]
+    with open(os.path.join(store, 'manifest.jsonl'), 'w') as fh:
+        fh.write(''.join(json.dumps(r) + '\n' for r in rows))
+    monkeypatch.setattr(check, 'time', Clock())
+    late = []
+    hits = check.scan_texts(store, {'t': f'value {LEAK}\n'}, deadline=4, late=late)
+    assert [h.label for h in hits] == ['t'] and late == [str(big)]
 
 
 # ---- the setup item ------------------------------------------------------------------------------------

@@ -14,8 +14,8 @@ stored, and every channel is checked until it lists the version.
 - `releasepro run --as LOGIN` starts `release.yml` on the branch and approves a pending gate only after
   the person's yes, and only for a gate it knows (`release`, `pypi`, `mcp-registry` among them).
 - A job that names an environment that does not exist creates it with no reviewer. So the `release`
-  environment must exist, with a required reviewer, before the first run. Today the repo has only
-  `pypi` (reviewer, branch policy `main`).
+  environment must exist, with a required reviewer, before the first run. Before 0.1.1 the repo had only
+  `pypi`; since 2026-10-22 `release` exists too, both with the user as reviewer and branch policy `main`.
 - Claude Code's `plugin.json` `version` is optional. Without it, Claude Code uses the commit of the
   plugin's folder to see an update; with it, a version left unchanged keeps users on the cached copy.
   gitpro's `plugin.json` has no version.

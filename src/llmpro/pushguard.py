@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 from . import store as cfg
 
@@ -17,6 +18,10 @@ command -v llmpro >/dev/null 2>&1 || exit 0
 exec llmpro hook push-guard "$@"
 """
 MAX_COMMITS = 1000
+# Seconds for the whole guard. git opens the connection before pre-push runs, and the remote may close it while
+# the hook works: a 16-minute rebuild of the leak cache lost a push to GitHub (2026-10-22). gitpro gives its own
+# check 30 s. Past the budget the leak check matches with what the cache holds and says so.
+BUDGET = 20
 MAX_FILE = 1_000_000  # bytes of added lines per file and commit; more is skipped
 ZERO = re.compile(r'0+')
 HUNK = re.compile(r'@@ -\S+ \+(\d+)')
@@ -94,6 +99,7 @@ def added_texts(shas):
 
 
 def _run(stdin):
+    deadline = time.monotonic() + BUDGET
     store = cfg.locate(None)
     config = os.path.join(store, 'config.toml')
     if not os.path.exists(config):
@@ -115,7 +121,11 @@ def _run(stdin):
     for name in git('rev-parse', '--local-env-vars').split():
         os.environ.pop(name, None)
     from . import check
-    hits = check.scan_texts(store, texts, jobs=1)
+    late = []
+    hits = check.scan_texts(store, texts, jobs=1, deadline=deadline, late=late)
+    if late:
+        print(f'llmpro: the leak check had no time to read {len(late)} raw logs in full; this push was checked '
+              'against what the cache holds. Run llmpro check to bring the cache up to date.', file=sys.stderr)
     if not hits:
         return 0
     print('llmpro: push stopped, secrets in what this push adds:', file=sys.stderr)

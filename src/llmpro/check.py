@@ -28,8 +28,8 @@ import re
 import sqlite3
 import string
 import subprocess
+import time
 
-from . import REDACT_VERSION, __version__
 from .store import MACHINE, data_file
 
 # The workers read KEY, SECRETS, PIECES... as the parent set them before the pool forked.
@@ -274,8 +274,10 @@ def walk_json(obj, out, where, key=''):
             walk_json(v, out, where, key)
 
 
-def read_jsonl(path, start, out):
-    """Collect from a .jsonl file from byte offset start; -> the offset after the last complete line."""
+def read_jsonl(path, start, out, deadline=None):
+    """Collect from a .jsonl file from byte offset start; -> (the offset after the last complete line read,
+    whether the file was read to its end). With a deadline (a time.monotonic() value) it stops after the
+    first complete line read past it."""
     end = start
     with open(path, 'rb') as f:
         f.seek(start)
@@ -287,7 +289,9 @@ def read_jsonl(path, start, out):
                 collect_text(line, out, path)
             if raw.endswith(b'\n'):
                 end += len(raw)  # a last line still being written is read now and again next time
-    return end
+                if deadline is not None and time.monotonic() >= deadline:
+                    return end, False
+    return end, True
 
 
 CREDENTIAL_FILE = re.compile(r'(?i)(^|/)(auth\.json|\.?credentials[^/]*|settings[^/]*\.json|\.env[^/]*|id_(rsa|ed25519|ecdsa)[^/]*|[^/]*\.(pem|key|p12|pfx))$|/secrets?/')
@@ -568,10 +572,14 @@ def print_leaks(rows, show_context):
 # its source again, in memory, so it is printed and allowlisted exactly as without the cache.
 # Raised whenever a change to the rules here can change what is collected from a raw source, so a cache
 # collected under the old rules is dropped. Unlike REDACT_VERSION it is not recorded in the store.
+# tests/test_push_guard.py pins a hash of the collection code next to it, so a change there is not missed.
 RULES_VERSION = 4  # 2: a run is judged by the whole base64 token it is part of; 3: PGP public key blocks;
 # 4: module._private names (2026-10-18)
-CACHE_VERSION = f'{__version__}+{REDACT_VERSION}+{RULES_VERSION}'
+# The cache is kept across releases: only the rules change what is collected (this file imports nothing from
+# redact.py). Keyed on the release, every upgrade had the next check collect every raw source again (2026-10-22).
+CACHE_VERSION = f'rules{RULES_VERSION}'
 KEY = b''
+DEADLINE = [None]  # a time.monotonic() value collect_job stops at; set in the parent before the pool forks
 WHOLE, HPIECES, META = {}, {}, []  # filled in the parent before the pool forks; read by match_hashed
 CHECKED = []  # the keyed hashes of every value the last part2_cached run checked for
 MIN_LEN = [6]
@@ -648,16 +656,29 @@ def tail_hash(path, offset):
 
 
 def collect_job(job):
-    """(path, start) -> (path, start, [(kind, value, source)], end offset, tail hash). Runs in a worker."""
+    """(path, start) -> (path, start, [(kind, value, source)], end offset, tail hash, read to the end). Runs in
+    a worker. Past DEADLINE a source is not started (the list is None); a .jsonl source stops part way."""
     path, start = job
+    deadline = DEADLINE[0]
+    if deadline is not None and time.monotonic() >= deadline:
+        return path, start, None, None, None, False
     if not appendable(path):
-        return path, 0, collect_source(path), None, None
+        return path, 0, collect_source(path), None, None, True
     out = []
     try:
-        end = read_jsonl(path, start, out)
-        return path, start, out, end, tail_hash(path, end)
+        end, done = read_jsonl(path, start, out, deadline)
+        return path, start, out, end, tail_hash(path, end), done
     except OSError as exc:
-        return path, start, out + [('error', type(exc).__name__, path)], None, None
+        return path, start, out + [('error', type(exc).__name__, path)], None, None, True
+
+
+def left_to_read(job):
+    """Bytes a job reads, for the order under a deadline; 0 when it cannot be told (a database, a folder)."""
+    path, start = job
+    try:
+        return os.path.getsize(path) - start if os.path.isfile(path) else 0
+    except OSError:
+        return 0
 
 
 def hashed_entry(kind, v, allow, afp):
@@ -700,11 +721,15 @@ def match_hashed(item):
     return hits
 
 
-def part2_cached(store, files, allow, jobs, show_context, more=None, quiet=False, sink=None):
+def part2_cached(store, files, allow, jobs, show_context, more=None, quiet=False, sink=None, deadline=None,
+                 late=None):
     """more: (hashes of the values some files were checked against before, a function that returns those
     files): they are checked again only if a value not among those hashes was collected since.
     quiet: print nothing. sink: a list that receives (file, line, how, kind, masked) for each hit instead of
-    the hits being printed (scan_texts)."""
+    the hits being printed (scan_texts).
+    deadline: a time.monotonic() value; sources are read fewest bytes first and none is started after it. A
+    .jsonl source stops part way and is cached at the offset it reached; a source not read in full goes into
+    late, and is matched with what the cache already held for it."""
     global KEY
     say = (lambda *a, **k: None) if quiet else print
     sources, refused = raw_sources(store)
@@ -727,9 +752,16 @@ def part2_cached(store, files, allow, jobs, show_context, more=None, quiet=False
             todo.append((p, o['offset']))
         else:
             todo.append((p, 0))
+    if deadline is not None:
+        todo.sort(key=left_to_read)
+    DEADLINE[0] = deadline
     fresh = {}
     if todo:
-        for path, start, out, end, tail in pmap(jobs, collect_job, todo, unordered=True):
+        for path, start, out, end, tail, done in pmap(jobs, collect_job, todo, unordered=True):
+            if not done and late is not None:
+                late.append(path)
+            if out is None:
+                continue  # not started in time: what the cache held for it, if anything, stands
             errors = [x for x in out if x[0] == 'error']
             for _, exc, src in errors:
                 say(f'note: could not read {src}: {exc}')
@@ -741,14 +773,19 @@ def part2_cached(store, files, allow, jobs, show_context, more=None, quiet=False
                     if e[1] not in seen:
                         seen.add(e[1])
                         values.append(e)
-            fresh[path] = {'sig': sigs[path], 'offset': end, 'tail': tail, 'values': values,
+            sig = sigs[path]
+            if not done and sig is not None:
+                sig = [sig[0], end, 0]  # read up to end: the next run goes on from there, not as up to date
+            fresh[path] = {'sig': sig, 'offset': end, 'tail': tail, 'values': values,
                            'keep': not errors and sigs[path] is not None}
-    merged = {p: fresh.get(p) or old[p] for p in sources}
+    DEADLINE[0] = None
+    merged = {p: fresh.get(p) or old.get(p) for p in sources}
+    merged = {p: e for p, e in merged.items() if e}
     WHOLE.clear()
     HPIECES.clear()
     META.clear()
-    for p in sources:
-        for kind, hv, n, ps in merged[p]['values']:
+    for p, entry in merged.items():
+        for kind, hv, n, ps in entry['values']:
             hb = bytes.fromhex(hv)
             if afp.get(hv) in allow or hb in WHOLE:
                 continue
@@ -856,9 +893,10 @@ class Hit:
     how: str     # 'pattern', 'whole' or 'piece'
 
 
-def scan_texts(store, texts, jobs=1):
+def scan_texts(store, texts, jobs=1, deadline=None, late=None):
     """Both checks over texts ({label: text}) that are not store files, with the store's raw sources, cache and
-    allowlist. -> [Hit], sorted. Prints nothing and does not write the blob cache. jobs=1 starts no pool."""
+    allowlist. -> [Hit], sorted. Prints nothing and does not write the blob cache. jobs=1 starts no pool.
+    deadline and late: as in part2_cached; the pattern scan always runs in full."""
     allow = load_allow(store)
     hits = []
     for label, text in sorted(texts.items()):
@@ -866,7 +904,7 @@ def scan_texts(store, texts, jobs=1):
             if fp(v) not in allow:
                 hits.append(Hit(label, off, kind, mask(v), 'pattern'))
     sink = []
-    part2_cached(store, texts, allow, jobs, False, quiet=True, sink=sink)
+    part2_cached(store, texts, allow, jobs, False, quiet=True, sink=sink, deadline=deadline, late=late)
     for label, line, how, kind, masked in sorted(sink):
         starts = [0]
         for m in re.finditer('\n', texts[label]):
