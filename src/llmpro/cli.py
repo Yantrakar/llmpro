@@ -54,6 +54,8 @@ def build_parser():
                    help='instead: list strings that look like secrets but were not flagged (a review aid; exit 0)')
     c.add_argument('--top', type=int, default=100, help='with --near-miss: groups to print (0 = all)')
     c.add_argument('--fix', action='store_true', help='rebuild memory/INDEX.md (nothing else is fixed)')
+    c.add_argument('--budget', type=float, default=None, metavar='SECONDS',
+                   help='read raw logs for the leak check only this long; the rest is checked against the cache')
 
     f = sub.add_parser('find', parents=[common], help='search past chats and memories')
     f.add_argument('query', nargs='+', metavar='QUERY', help='words; all must occur in the same file')
@@ -116,16 +118,21 @@ def do_check(args, store):
         if args.json:
             jsonout.emit('check', {'passed': True, 'exit': 0, 'output': buf.getvalue().splitlines()})
         return 0
-    buf = io.StringIO()
+    if args.budget is not None and args.no_cache:
+        print('--budget needs the cache; it cannot be combined with --no-cache', file=sys.stderr)
+        return 2
+    buf, late = io.StringIO(), []
     capture = args.json or getattr(args, 'quiet', False)
     with contextlib.redirect_stdout(buf) if capture else contextlib.nullcontext():
         code = check.run(store, staged=args.staged, history=args.history, jobs=args.jobs, part=args.part,
                          context=args.context, no_cache=args.no_cache,
-                         health=not (args.staged or args.history or args.part), fix=args.fix)
+                         health=not (args.staged or args.history or args.part), fix=args.fix,
+                         budget=args.budget, late=late)
     text = buf.getvalue()
     if args.json:
         lines = text.splitlines()
-        jsonout.emit('check', {'passed': code == 0, 'exit': code, 'output': lines}, ok=code == 0)
+        jsonout.emit('check', {'passed': code == 0, 'exit': code, 'output': lines, 'late': len(late)},
+                     ok=code == 0)
     elif capture and code != 0:
         sys.stdout.write(text)
     return code

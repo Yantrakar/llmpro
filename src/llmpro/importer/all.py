@@ -42,12 +42,29 @@ def digest(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:32]
 
 
-# Files that redact() left unchanged in an earlier run, by content hash, for the version of the tool and the
-# redactor then (__version__ and REDACT_VERSION).
+# Files that redact() left unchanged in an earlier run, by content hash, for the redaction code then.
 # redact() learns a value only where it replaces one, so an unchanged file teaches nothing and need not be
 # redacted again; the sweep still runs over every file. Kept in .git, never committed: hashes only.
 NOOP_CACHE = os.path.join('.git', 'agentspro', 'noop-redact.json')
-CODE = f'{__version__}+{REDACT_VERSION}'
+
+
+def code_key():
+    """-> the key of the no-op cache: REDACT_VERSION and a hash of redact.py's redaction section, the only code
+    redact()'s result depends on (spec 23). So a release keeps the cache unless that code changed. Without
+    the source, the version of the tool, as before 0.1.2."""
+    try:
+        text = open(common.__file__, encoding='utf-8').read()
+        a = re.search(r'^# -+ redaction$', text, re.M)
+        b = re.search(r'^# -+ text helpers$', text, re.M)
+        if not (a and b and a.start() < b.start()):
+            raise ValueError
+        h = hashlib.sha256(text[a.start():b.start()].encode('utf-8')).hexdigest()[:16]
+    except (OSError, ValueError, TypeError):
+        h = __version__
+    return f'redact{REDACT_VERSION}+{h}'
+
+
+CODE = code_key()
 
 
 def load_noop(store):
@@ -60,7 +77,8 @@ def load_noop(store):
 
 def save_noop(store, hashes):
     if os.path.isdir(os.path.join(store, '.git')):
-        write_text(os.path.join(store, NOOP_CACHE), json.dumps({'code': CODE, 'hashes': sorted(hashes)}))
+        write_text(os.path.join(store, NOOP_CACHE), json.dumps({'code': CODE, 'hashes': sorted(hashes)}),
+                   mode=0o600)
 
 
 def run_all(store):

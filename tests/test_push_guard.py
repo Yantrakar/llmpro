@@ -364,6 +364,23 @@ def test_the_fewest_bytes_are_read_first_under_a_deadline(store, home, env, monk
     assert [h.label for h in hits] == ['t'] and late == [str(big)]
 
 
+
+def test_check_budget_reports_raw_logs_not_read(store, home, env, capsys):
+    raw = long_session(home)
+    assert cli.main(['check', '--store', store, '--json', '--budget', '0']) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out['late'] == 1 and cached(store, raw) is None
+    assert any('1 raw logs not read in full in the time' in l and 'llmpro check' in l for l in out['output'])
+    assert cli.main(['check', '--store', store, '--json']) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out['late'] == 0 and not any('not read in full' in l for l in out['output'])
+    assert cached(store, raw) is not None
+
+
+def test_check_budget_needs_the_cache(store, env, capsys):
+    assert cli.main(['check', '--store', store, '--budget', '5', '--no-cache']) == 2
+    assert '--no-cache' in capsys.readouterr().err
+
 # ---- the setup item ------------------------------------------------------------------------------------
 
 @pytest.fixture

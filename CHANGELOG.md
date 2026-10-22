@@ -4,7 +4,7 @@ All notable changes to llmpro (developed as agentspro). The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). A release needs a section
 `## X.Y.Z (YYYY-MM-DD)` for its version; see docs/releasing.md.
 
-## 0.1.2 (2026-10-22)
+## 0.1.2 (2026-10-23)
 
 ### Fixed
 
@@ -17,6 +17,19 @@ All notable changes to llmpro (developed as agentspro). The format follows
 - The leak cache is kept across releases. It was dropped at every upgrade, so the first
   check after one read every raw log again. It is dropped only when the rules for what
   is collected change. The first check after upgrading to 0.1.2 still reads them once.
+- The MCP `check` tool reads raw logs for 20 seconds at most and is stopped after 60, so
+  the assistant is no longer left waiting for every other answer. Its result carries
+  `late`, the raw logs not read in full in the time.
+- The Claude Code hook before each Bash call keeps to one budget of 8 seconds for both
+  of its gitpro calls. It could take 16, and Claude Code stops it at 10.
+- The sync's no-op cache is kept across releases unless the redaction code changed,
+  and is written readable by you only (it was readable by others). The first sync after
+  upgrading to 0.1.2 still redacts every file once.
+
+### Added
+
+- `llmpro check --budget SECONDS` reads raw logs for the leak check only this long and
+  checks the rest against the cache; the output says how many were not read in full.
 
 ## 0.1.1 (2026-10-22)
 

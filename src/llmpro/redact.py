@@ -27,11 +27,18 @@ def apply_config():
     _NO_SWEEP.update(w.lower() for w in extra if isinstance(w, str) and w)
 
 
-def write_text(path, text, binary=False):
-    """Write a file whole or not at all: a killed run or a second one never leaves half a file."""
+def write_text(path, text, binary=False, mode=None):
+    """Write a file whole or not at all: a killed run or a second one never leaves half a file. With a mode
+    (0o600 for a private cache), the file has that mode from the start, also when it replaces one."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f'{path}.tmp{os.getpid()}'
-    with open(tmp, 'wb' if binary else 'w', **({} if binary else {'encoding': 'utf-8'})) as fh:
+    if mode is not None:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        os.fchmod(fd, mode)  # an old tmp file of the same name keeps its mode through O_CREAT
+        fh = os.fdopen(fd, 'wb' if binary else 'w', **({} if binary else {'encoding': 'utf-8'}))
+    else:
+        fh = open(tmp, 'wb' if binary else 'w', **({} if binary else {'encoding': 'utf-8'}))
+    with fh:
         fh.write(text)
     os.replace(tmp, path)
 

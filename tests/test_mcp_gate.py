@@ -1,6 +1,8 @@
 """The MCP server never returns local content: find --shared-only and the last gate in mcp.py."""
 import json
 import os
+import sys
+import time
 
 import pytest
 
@@ -78,3 +80,43 @@ def test_command_always_adds_shared_only():
     for extra in ({}, {'scope': 'history'}, {'verbose': True}, {'shared_only': False}, {'shared-only': False}):
         cmd = mcp.command('find', {'query': ['x'], **extra})
         assert '--shared-only' in cmd and cmd.index('--shared-only') < cmd.index('--')
+
+
+# ---- the check's time limit (spec 23)
+
+def test_check_runs_with_a_budget():
+    assert mcp.command('check', {}) == ['check', '--json', '--budget', str(mcp.CHECK_BUDGET)]
+    assert mcp.CHECK_BUDGET < mcp.CHECK_TIMEOUT
+
+
+def test_a_check_out_of_time_is_an_error(store, monkeypatch):
+    monkeypatch.setattr(mcp, 'CHECK_TIMEOUT', 0.01)
+    r = mcp.call(store, 'check', {})
+    assert r['isError'] and 'did not finish' in r['content'][0]['text']
+    assert 'llmpro check' in r['content'][0]['text']
+
+
+def test_out_of_time_stops_the_whole_group(tmp_path):
+    pidfile = tmp_path / 'pid'
+    code = ('import subprocess, sys, time\n'
+            'p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])\n'
+            f'open({str(pidfile)!r}, "w").write(str(p.pid))\n'
+            'time.sleep(60)\n')
+    start = time.monotonic()
+    assert mcp.run_limited([sys.executable, '-c', code], 2) is None
+    assert time.monotonic() - start < 10
+    pid = int(pidfile.read_text())
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        pytest.fail('the worker outlived the check')
+
+
+def test_a_check_in_time_answers_as_before(store):
+    r = mcp.call(store, 'check', {})
+    assert not r['isError']
+    assert json.loads(r['content'][0]['text'])['late'] == 0

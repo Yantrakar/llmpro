@@ -243,6 +243,16 @@ def test_hook_gives_up_on_a_slow_gitpro(hook, fake_gitpro):
     assert time.time() - start < 10
 
 
+
+def test_hook_keeps_to_one_budget_for_both_calls(hook, fake_gitpro):
+    # each call alone is within 8 s, both together are not: the hook must end before hooks.json's 10 s
+    fake_gitpro.slow_version(6)
+    fake_gitpro.answer(ARGV, REPLY, sleep=6)
+    start = time.time()
+    r, _ = hook(timeout=20)
+    assert (r.returncode, r.stdout) == (0, '')
+    assert time.time() - start < 10
+
 # ---------------------------------------------------------------- the skill in the store
 
 def run(argv, capsys):

@@ -18,9 +18,8 @@ Round 6 (2026-10-22). A fix to 06 (push guard) and to the leak cache in `check.p
 - The guard calls `check.scan_texts(store, texts, jobs=1)`: no worker pool, and no time limit.
 - gitpro's `pre-push` hook runs its own check under `timeout --foreground 30`, then runs the `chain_to`
   hook with no time limit.
-- `importer/all.py` keys the sync's no-op cache on `f'{__version__}+{REDACT_VERSION}'`. That one is
-  right as it is: a release can change what the importer writes, and there is no import rules version.
-  It does not run in the push guard. Unchanged.
+- `importer/all.py` keys the sync's no-op cache on `f'{__version__}+{REDACT_VERSION}'`. It does not run
+  in the push guard; 23 changes it.
 
 ## Changes
 
@@ -83,5 +82,5 @@ pin (it does not). The test's message says so.
 
 ## Release
 
-0.1.2: a new first line in `src/llmpro/VERSION` and `## 0.1.2 (2026-10-22)` in `CHANGELOG.md`. The user
+0.1.2: a new first line in `src/llmpro/VERSION` and `## 0.1.2 (2026-10-23)` in `CHANGELOG.md`. The user
 runs the release.

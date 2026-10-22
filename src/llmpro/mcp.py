@@ -7,6 +7,7 @@ The find tool always passes --shared-only and a last gate drops any hit under lo
 """
 import json
 import os
+import signal
 import subprocess
 import sys
 
@@ -18,6 +19,10 @@ INSTRUCTIONS = ('llmpro offers tools to search past chats and memories in the st
                 'which command to run, and the person runs it.')
 OWN = ('find', 'check', 'sync_status', 'sessions')
 READ_ONLY = {'readOnlyHint': True}
+# The check reads raw logs for CHECK_BUDGET seconds at most, and is stopped after CHECK_TIMEOUT: the server
+# answers one request at a time, so a long check would leave the assistant waiting for everything (spec 23).
+CHECK_BUDGET = 20
+CHECK_TIMEOUT = 60
 
 TOOLS = [
     {'name': 'find',
@@ -32,8 +37,9 @@ TOOLS = [
          'required': ['query']},
      'annotations': {'title': 'Find in the store', **READ_ONLY}},
     {'name': 'check',
-     'description': 'Check the store for secrets and broken files, read-only. Returns JSON: passed, exit, output. '
-                    'To fix the memory index the person runs `llmpro check --fix`.',
+     'description': 'Check the store for secrets and broken files, read-only. Returns JSON: passed, exit, output, '
+                    'late (raw logs not read in full in the 20 s it may read them; those were checked against '
+                    'the cache). To fix the memory index the person runs `llmpro check --fix`.',
      'inputSchema': {'type': 'object', 'properties': {}},
      'annotations': {'title': 'Check the store', **READ_ONLY}},
     {'name': 'sync_status',
@@ -54,7 +60,7 @@ TOOLS = [
 def command(name, args):
     """-> the llmpro arguments for a tool call; ValueError if the arguments are wrong."""
     if name == 'check':
-        return ['check', '--json']
+        return ['check', '--json', '--budget', str(CHECK_BUDGET)]
     if name == 'sync_status':
         return ['sync', '-n', '--json']
     if name == 'sessions':
@@ -123,6 +129,23 @@ def gate_sessions(result):
     return {'content': [{'type': 'text', 'text': json.dumps(body, ensure_ascii=False)}], 'isError': False}
 
 
+def run_limited(argv, seconds):
+    """-> the CompletedProcess, or None when it ran out of time. The child gets its own process group, and the
+    whole group (its worker pool too) is stopped with SIGKILL then."""
+    p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                         text=True, start_new_session=True)
+    try:
+        out, err = p.communicate(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        p.communicate()
+        return None
+    return subprocess.CompletedProcess(argv, p.returncode, out, err)
+
+
 def call(store, name, args):
     """-> the result of tools/call."""
     try:
@@ -131,8 +154,13 @@ def call(store, name, args):
         raise
     except ValueError as exc:
         return {'content': [{'type': 'text', 'text': str(exc)}], 'isError': True}
-    r = subprocess.run([sys.executable, '-m', 'llmpro', '--store', store] + cmd,
-                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    argv = [sys.executable, '-m', 'llmpro', '--store', store] + cmd
+    if name == 'check':
+        r = run_limited(argv, CHECK_TIMEOUT)
+        if r is None:
+            return refuse(f'llmpro check did not finish in {CHECK_TIMEOUT:g} s; run llmpro check in a terminal.')
+    else:
+        r = subprocess.run(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     # 0 ok and 1 "problems or nothing found" are answers; 2 is an error
     if r.returncode in (0, 1):
         result = {'content': [{'type': 'text', 'text': r.stdout.strip()}], 'isError': False}

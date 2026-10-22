@@ -11,12 +11,13 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 from . import gitpro
 
 CAPABILITY = 'agent-check'
 MAX_INPUT = 1_000_000  # bytes of the hook event
-TIMEOUT = 8  # seconds for gitpro
+BUDGET = 8  # seconds for the whole hook, both gitpro calls: hooks.json stops it at 10 (spec 23)
 CACHE = 'gitpro-version.json'
 
 
@@ -31,11 +32,19 @@ def fingerprint(path):
     return {'path': path, 'size': st.st_size, 'mtime_ns': st.st_mtime_ns}
 
 
-def read_capabilities(path, env):
+def left(deadline):
+    """-> the seconds left until `deadline` (a time.monotonic() value); TimeoutError when none are."""
+    s = deadline - time.monotonic()
+    if s <= 0:
+        raise TimeoutError
+    return s
+
+
+def read_capabilities(path, env, deadline):
     """-> the capabilities of the gitpro at `path` (empty when it is too old), or None when it does not answer."""
     try:
         r = subprocess.run([path, '--version', '--json'], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                           timeout=TIMEOUT, env=env)
+                           timeout=left(deadline), env=env)
         data = json.loads(r.stdout)
         if gitpro.parse_version(data['version']) < gitpro.MIN_VERSION:
             return []
@@ -44,7 +53,7 @@ def read_capabilities(path, env):
         return None
 
 
-def capabilities(path, env):
+def capabilities(path, env, deadline):
     """The capabilities, from the cache while gitpro is unchanged."""
     want = fingerprint(path)
     try:
@@ -55,7 +64,7 @@ def capabilities(path, env):
             return data['capabilities']
     except (OSError, ValueError):
         pass
-    caps = read_capabilities(path, env)
+    caps = read_capabilities(path, env, deadline)
     if caps is None:
         return []  # not kept, so a gitpro that was slow once is asked again next time
     try:
@@ -71,16 +80,17 @@ def capabilities(path, env):
 
 def run(stdin=None):
     """-> the exit status. 0 whenever llmpro itself has trouble."""
+    deadline = time.monotonic() + BUDGET
     try:
         g = gitpro.Gitpro()
         if not g.path:
             return 0
         env = g._env()
-        if CAPABILITY not in capabilities(g.path, env):
+        if CAPABILITY not in capabilities(g.path, env, deadline):
             return 0
         data = (stdin or sys.stdin.buffer).read(MAX_INPUT)
         r = subprocess.run([g.path, CAPABILITY, '--agent', 'claude'], input=data, capture_output=True,
-                           timeout=TIMEOUT, env=env)
+                           timeout=left(deadline), env=env)
         sys.stdout.buffer.write(r.stdout)
         sys.stdout.buffer.flush()
         sys.stderr.buffer.write(r.stderr)

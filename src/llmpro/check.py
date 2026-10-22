@@ -914,10 +914,14 @@ def scan_texts(store, texts, jobs=1, deadline=None, late=None):
 
 
 def run(store, all=False, staged=False, history=False, jobs=None, part=None, context=False, no_cache=False,
-        health=False, fix=False):
+        health=False, fix=False, budget=None, late=None):
     """The check over the store. -> 0 if it passed, 1 if anything was found that is not allowlisted.
-    Default (neither staged nor history): part 1 over every file in the working tree (`--all` before)."""
+    Default (neither staged nor history): part 1 over every file in the working tree (`--all` before).
+    budget: seconds from now in which the cached leak check reads raw sources (spec 23); `late`, a list,
+    receives those not read in full."""
     global KEY
+    deadline = None if budget is None else time.monotonic() + budget
+    late = [] if late is None else late
     jobs = jobs or os.cpu_count() or 4
     allow = load_allow(store)
     # sessions/ (raw/ before 2026-10-08) holds the tools' unredacted logs; git must never see them
@@ -969,8 +973,11 @@ def run(store, all=False, staged=False, history=False, jobs=None, part=None, con
             n2 = part2(store, files, allow, jobs, context)
         else:
             more = (checked, lambda: read_blobs(store, {b: names[b] for b in clean})) if clean else None
-            n2 = part2_cached(store, files, allow, jobs, context, more)
+            n2 = part2_cached(store, files, allow, jobs, context, more, deadline=deadline, late=late)
         print(f'leak check: {n2} hits')
+        if late:
+            print(f'leak check: {len(late)} raw logs not read in full in the time; checked against what the '
+                  'cache holds. Run llmpro check to bring the cache up to date.')
     if cdir and part is None:
         save_blob_cache(cdir, allow, {b for b, p in names.items() if blob_rel(b, p) not in BAD}, CHECKED)
     if n1 or n2:

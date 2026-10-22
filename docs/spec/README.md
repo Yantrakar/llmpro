@@ -13,6 +13,7 @@ gitpro's code. `01-design.md` is the design of agentspro itself (2026-10-16). Th
 | `15-sessions-list.md` ... `20-sessions-takeover.md` | Round 4 (2026-10-21): live sessions, version 1 (S1 to S11) |
 | `21-releasepro.md` | Round 5 (2026-10-22): releases run by releasepro, the version in one file |
 | `22-push-guard-budget.md` | Round 6 (2026-10-22): the leak cache survives a release; the push guard keeps to a time budget |
+| `23-time-limits-and-caches.md` | Round 6 (2026-10-23): `check --budget` and a time limit for the MCP check; one budget for the agent hook; the sync's no-op cache survives a release and is private |
 
 Each package file is self-contained: an agent that has read this file, `00-existing.md`,
 `DECISIONS.md` and its own package file has everything it needs. Where a package uses something an
