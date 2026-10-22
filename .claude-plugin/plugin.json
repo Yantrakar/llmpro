@@ -1,6 +1,5 @@
 {
   "name": "llmpro",
-  "version": "0.1.0",
   "description": "One store for your assistants' chats, memories and skills, kept free of secrets, with git identity checks.",
   "author": {"name": "Yantrakar"},
   "repository": "https://github.com/Yantrakar/llmpro",

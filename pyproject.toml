@@ -39,7 +39,8 @@ git = "llmpro.plugins.git:plugin"
 llmpro = "llmpro.cli:main"
 
 [tool.hatch.version]
-path = "src/llmpro/__init__.py"
+path = "src/llmpro/VERSION"   # the only place the version is written
+pattern = '\A(?P<version>\d+\.\d+\.\d+)'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/llmpro"]

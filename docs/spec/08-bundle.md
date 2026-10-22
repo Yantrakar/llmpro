@@ -61,7 +61,8 @@ From 03 to 07: `gitpro.get()`, `tools.which`, `plugins.base.SetupItem`, `setup.I
 
 ### The Claude Code plugin
 
-7. `.claude-plugin/plugin.json`: `name` `llmpro`, `version` the package version, a one-line
+7. `.claude-plugin/plugin.json`: `name` `llmpro`, `version` the package version (no version from 0.1.1:
+   see 21), a one-line
    `description`, `author` `{"name": "Yantrakar"}`, `repository` `https://github.com/Yantrakar/llmpro`,
    `license` `MIT`. `.claude-plugin/marketplace.json`: one marketplace named `llmpro` listing this plugin
    with `source` `./`. `skills/` is picked up from the plugin root.
@@ -69,6 +70,7 @@ From 03 to 07: `gitpro.get()`, `tools.which`, `plugins.base.SetupItem`, `setup.I
 9. `hooks/hooks.json`: one `PreToolUse` hook, matcher `Bash`, timeout 10:
    `sh -c 'command -v llmpro >/dev/null 2>&1 || exit 0; llmpro hook agent-check; exit 0'`.
 10. A test checks that `plugin.json`'s `version` equals `llmpro.__version__`, so a release cannot forget it.
+    (Replaced by 21: from 0.1.1 the test checks there is no version.)
     (`docs/releasing.md` is not in "May edit"; say in the report that it should mention the bump.)
 
 ### The agent hook (`hot.py`, `agentcheck.py`)

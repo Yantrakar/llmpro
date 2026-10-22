@@ -34,8 +34,8 @@ def smoke(wheel):
         assert Path(imported.stdout.strip()) == package / 'llmpro/__init__.py', \
             'the smoke test imported the checkout instead of the wheel'
 
-        from_wheel = zipfile.Path(wheel, 'llmpro/__init__.py').read_text()
-        version = from_wheel.split('__version__ = "')[1].split('"')[0]
+        assert 'llmpro/VERSION' in names, 'VERSION is missing from the wheel'
+        version = zipfile.Path(wheel, 'llmpro/VERSION').read_text().split()[0]
         result = run('--version')
         assert result.returncode == 0 and result.stdout.strip() == f'llmpro {version}', result
 

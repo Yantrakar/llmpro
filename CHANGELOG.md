@@ -4,6 +4,16 @@ All notable changes to llmpro (developed as agentspro). The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). A release needs a section
 `## X.Y.Z (YYYY-MM-DD)` for its version; see docs/releasing.md.
 
+## 0.1.1 (2026-10-22)
+
+### Changed
+
+- Releases are run by releasepro: a person says yes at the gate of the GitHub
+  release and of PyPI, and a job that failed can be run again. The GitHub release
+  carries the release notes and an announcement draft.
+- The version is written in one file, `src/llmpro/VERSION`. The Claude Code plugin
+  no longer names a version, so Claude Code sees an update from the commit.
+
 ## 0.1.0 (2026-10-22)
 
 ### Added

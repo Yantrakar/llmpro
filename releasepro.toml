@@ -1,0 +1,19 @@
+# How llmpro releases, run by releasepro (https://github.com/Yantrakar/releasepro).
+# Spec: docs/spec/21-releasepro.md.
+
+[release]
+repo = "Yantrakar/llmpro"
+version_file = "src/llmpro/VERSION"   # the first word of line 1 is X.Y.Z
+branch = "main"
+workflow = "release.yml"
+preflight = ["gitpro why"]            # must exit 0 before a run starts
+
+[channel.github]
+assets = ["llmpro-{v}-py3-none-any.whl", "llmpro-{v}.tar.gz", "SHA256SUMS", "ANNOUNCEMENT.md"]
+
+[channel.pypi]
+project = "llmpro"
+
+[notes]
+changelog = "CHANGELOG.md"
+summary = "llmpro keeps every AI assistant's chats, memories and instructions on a machine in one git repo, with secrets redacted and checked."

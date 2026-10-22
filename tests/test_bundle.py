@@ -73,7 +73,9 @@ def load(*parts):
 def test_plugin_json():
     plugin = load('.claude-plugin', 'plugin.json')
     assert plugin['name'] == 'llmpro'
-    assert plugin['version'] == llmpro.__version__
+    assert 'version' not in plugin  # Claude Code then uses the commit of the plugin folder
+    market = load('.claude-plugin', 'marketplace.json')
+    assert 'version' not in market and all('version' not in p for p in market['plugins'])
     assert plugin['description']
     assert plugin['author'] == {'name': 'Yantrakar'}
     assert plugin['repository'] == 'https://github.com/Yantrakar/llmpro'

@@ -1,19 +1,21 @@
 name: Release
 
-# Run it by hand on main: Actions > Release > Run workflow, or
-# `gh workflow run release.yml --ref main`. Starting the run is the approval.
-# The version in src/llmpro/__init__.py must have a dated section in
-# CHANGELOG.md and no tag yet. CI runs on the same commit, then one build
-# becomes tag vX.Y.Z and a GitHub release with the wheel, sdist and SHA256SUMS.
-#
-# PyPI and the MCP Registry are off while the code is private. They run when
-# the repository variables PUBLISH_PYPI and PUBLISH_MCP are "true"; see
-# docs/releasing.md for what has to be in place first.
+# Run by hand on main ("Run workflow", or `releasepro run --as LOGIN`), never
+# by a tag. The version in src/llmpro/VERSION, the only place it is written,
+# must be X.Y.Z; tag vX.Y.Z must not exist yet; CHANGELOG.md must have the
+# version's section. CI runs first. One build then feeds the GitHub release,
+# which gets the release notes as its body and the announcement draft as an
+# asset, and then PyPI. Each publishing job waits for its environment's
+# reviewer. The MCP Registry runs when the repository variable PUBLISH_MCP is
+# "true"; see docs/releasing.md. Spec: docs/spec/21-releasepro.md.
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  RELEASEPRO: releasepro==0.2.2   # the one pin; check and build install it
 
 concurrency:
   group: release
@@ -27,42 +29,47 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - name: Started on main
+      - name: Runs on main
         run: test "$GITHUB_REF" = refs/heads/main
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Version, changelog and tag
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install "$RELEASEPRO"
+      - name: The version is X.Y.Z and the changelog has its section
         id: version
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          v=$(python3 -c 'import re,pathlib; print(re.search(r"__version__ = \"(.+)\"", pathlib.Path("src/llmpro/__init__.py").read_text())[1])')
-          echo "version=$v"
-          grep -Eq "^## $v \([0-9]{4}-[0-9]{2}-[0-9]{2}\)$" CHANGELOG.md || { echo "CHANGELOG.md has no '## $v (YYYY-MM-DD)' section"; exit 1; }
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$v" >/dev/null 2>&1; then echo "tag v$v exists"; exit 1; fi
+          v=$(releasepro version)
+          releasepro notes --check "$v"
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
-      - name: Ready for PyPI
-        if: vars.PUBLISH_PYPI == 'true'
+      - name: The tag is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          name=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["name"])')
-          test "$name" = llmpro || { echo "PUBLISH_PYPI is on but the package is named $name, not llmpro"; exit 1; }
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --silent 2>err; then
+            echo "tag $TAG already exists"; exit 1
+          fi
+          grep -q "HTTP 404" err || { cat err; exit 1; }
       - name: Ready for the MCP Registry
         if: vars.PUBLISH_MCP == 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          test "${{ vars.PUBLISH_PYPI }}" = true || { echo "PUBLISH_MCP needs PUBLISH_PYPI"; exit 1; }
           jq -e --arg v "$VERSION" '.version == $v and ([.packages[].version] | all(. == $v))' server.json
           grep -Fqx "<!-- mcp-name: $(jq -r .name server.json) -->" README.md
 
   ci:
     needs: check
     uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
 
   build:
-    needs: ci
+    needs: [check, ci]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -76,47 +83,87 @@ jobs:
       - run: python -m build --outdir dist .
       - run: python tests/smoke_wheel.py dist/*.whl
       - run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: The release notes and the announcement draft
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          pip install "$RELEASEPRO"
+          releasepro notes "$VERSION" --write notes
+          cat notes/ANNOUNCEMENT.md
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notes
+          path: notes/
           if-no-files-found: error
 
   github:
     needs: [check, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist
-      - name: Notes from CHANGELOG.md
-        env:
-          VERSION: ${{ needs.check.outputs.version }}
-        run: |
-          awk -v v="$VERSION" '$0 ~ "^## " v " " {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
-          cat notes.md
-      - name: Tag and release
+      - uses: actions/download-artifact@v4
+        with:
+          name: notes
+          path: notes
+      # A tag made with the job's own token starts no other workflow. Re-running a failed job must
+      # not fail on what the first attempt already did: a tag at this commit and a release are kept.
+      - name: Create the tag
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.check.outputs.tag }}
-        run: gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object | .type + " " + .sha' >ref 2>err; then
+            read -r type sha < ref
+            if [ "$type" = tag ]; then
+              sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .object.sha)
+            fi
+            if [ "$sha" = "$GITHUB_SHA" ]; then
+              echo "tag $TAG already points at $GITHUB_SHA"; exit 0
+            fi
+            echo "tag $TAG exists at $sha, not at $GITHUB_SHA"; exit 1
+          fi
+          grep -q "HTTP 404" err || { cat err; exit 1; }
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$TAG" -f message="llmpro $VERSION" \
+                -f object="$GITHUB_SHA" -f type=commit --jq .sha)
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$sha" --silent
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>err; then
+            gh release upload "$TAG" dist/* notes/ANNOUNCEMENT.md --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes/RELEASE_NOTES.md
+          else
+            grep -q "release not found" err || { cat err; exit 1; }
+            gh release create "$TAG" dist/* notes/ANNOUNCEMENT.md --repo "$GITHUB_REPOSITORY" --title "$TAG" \
+              --notes-file notes/RELEASE_NOTES.md --verify-tag
+          fi
 
+  # PyPI trusts this file and the pypi environment as a trusted publisher, so no token is stored.
+  # It must stay in this file: PyPI does not accept a workflow from another repo.
   pypi:
     needs: github
-    if: vars.PUBLISH_PYPI == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: pypi
       url: https://pypi.org/project/llmpro/
     permissions:
-      id-token: write  # trusted publishing; no token is stored
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -124,6 +171,8 @@ jobs:
           path: dist
       - run: rm dist/SHA256SUMS
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
   mcp-registry:
     needs: [check, pypi]
