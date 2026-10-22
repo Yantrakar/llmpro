@@ -72,9 +72,10 @@ def default_scope(slug):
     if slug == home_slug:  # the Claude project slug of the home folder itself
         return 'global'
     cwd = session_cwd(slug)
-    if not cwd:  # no sessions left: decode the slug, dropping the home prefix
+    if not cwd:  # no sessions left: decode the slug, dropping the home prefix and a folder directly under home
         cwd = slug[len(home_slug):] if slug.startswith(home_slug) else slug
-        cwd = cwd.strip('-').split('-', 1)[-1] if cwd.strip('-').startswith(('workspace-',)) else cwd
+        first, _, rest = cwd.strip('-').partition('-')
+        cwd = rest if rest and first and os.path.isdir(os.path.join(home(), first)) else cwd
     if os.path.normpath(cwd) == home():
         return 'global'
     return re.sub(r'[^a-z0-9.]+', '-', os.path.basename(cwd.rstrip('/')).lower()).strip('-') or 'global'

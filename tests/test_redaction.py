@@ -143,6 +143,19 @@ class Store(unittest.TestCase):
         finally:
             store.LOCAL_ONLY[:] = saved
 
+    def test_scope_from_slug_without_sessions(self):
+        import tempfile
+        from unittest import mock
+        from llmpro.importer import memory as import_memory
+        with tempfile.TemporaryDirectory() as d:
+            os.mkdir(os.path.join(d, 'code'))
+            slug = re.sub(r'[^A-Za-z0-9]', '-', d)
+            with mock.patch.object(import_memory, 'home', return_value=d), \
+                    mock.patch.object(import_memory, 'session_cwd', return_value=''):
+                self.assertEqual(import_memory.default_scope(slug), 'global')
+                self.assertEqual(import_memory.default_scope(slug + '-code-web-app'), 'web-app')
+                self.assertEqual(import_memory.default_scope(slug + '-notes-app'), 'notes-app')
+
 
 class SecretcheckCollector(unittest.TestCase):
     def collected(self, text):
