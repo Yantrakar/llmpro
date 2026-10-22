@@ -99,9 +99,10 @@ def _run(stdin):
     if not os.path.exists(config):
         return 0
     open(config, 'rb').close()  # a store whose config cannot be read is broken: say so (and let the push go on)
-    top = git('rev-parse', '--show-toplevel').strip()
-    if os.path.realpath(top) == os.path.realpath(store):
-        return 0  # the store has its own hooks
+    if git('rev-parse', '--is-bare-repository').strip() != 'true':  # a bare repo has no top folder, and isn't the store
+        top = git('rev-parse', '--show-toplevel').strip()
+        if os.path.realpath(top) == os.path.realpath(store):
+            return 0  # the store has its own hooks
     shas, more = commits_of(stdin.read().splitlines())
     if not shas:
         return 0
@@ -110,6 +111,9 @@ def _run(stdin):
     texts, where = added_texts(shas)
     if not texts:
         return 0
+    # git hands a hook run in a bare repo GIT_DIR; the scan's git calls are about the store, not this repo
+    for name in git('rev-parse', '--local-env-vars').split():
+        os.environ.pop(name, None)
     from . import check
     hits = check.scan_texts(store, texts, jobs=1)
     if not hits:

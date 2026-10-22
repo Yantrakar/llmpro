@@ -138,6 +138,17 @@ def test_allowlisted_fingerprint_passes(repo, env, store):
     assert r.returncode == 0 and r.stderr == ''
 
 
+def test_push_from_a_bare_repo_is_checked(repo, env, tmp_path):
+    commit(repo, 'a.txt', f'x = "{TOKEN}"\n')
+    bare = tmp_path / 'mirror.git'
+    sh('git', 'clone', '-q', '--bare', str(repo), str(bare))
+    sh('git', '-C', str(bare), 'config', 'core.hooksPath', str(tmp_path / 'hooks'))
+    sh('git', 'init', '-q', '--bare', '-b', 'main', str(tmp_path / 'other.git'))
+    r = push(bare, str(tmp_path / 'other.git'), 'main', env=env)
+    assert r.returncode != 0
+    assert 'push stopped' in r.stderr and 'a.txt:1' in r.stderr and 'could not run' not in r.stderr
+
+
 def test_broken_store_fails_open(repo, env, store):
     os.remove(os.path.join(store, 'config.toml'))
     os.mkdir(os.path.join(store, 'config.toml'))  # exists, cannot be read

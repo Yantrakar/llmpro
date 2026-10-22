@@ -4,6 +4,13 @@ All notable changes to llmpro (developed as agentspro). The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). A release needs a section
 `## X.Y.Z (YYYY-MM-DD)` for its version; see docs/releasing.md.
 
+## Unreleased
+
+### Fixed
+
+- The push guard checks pushes made from a bare repository. It used to stop with
+  "could not run" and let them through unchecked.
+
 ## 0.1.0 (2026-10-21)
 
 ### Added
