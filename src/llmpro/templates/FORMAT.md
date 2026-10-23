@@ -26,7 +26,8 @@ local/            chats of local-only projects ([privacy] local_only in config.t
                   redacted like history/; git-ignored, never committed or sent to the hub
 manifest.jsonl    one row per source item: tool, machine, kind, source_path, original_id,
                   mtime, size, output, status (imported | skipped:<reason>)
-.agentspro/       allowlist.json (secret-check false positives) and memory_overrides.json
+.agentspro/       allowlist.json (secret-check false positives), blocklist.json (secrets no rule
+                  finds) and memory_overrides.json
 ```
 
 `<machine>` is the short hostname. `<tool>` is codex, claude-code, copilot, copilot-cli, opencode, hermes, or another plain name. History is per machine, so two machines never clash. Merge another machine's store by copying its history/ and instructions/ folders and its manifest rows, and merging memories by the rule below. Each machine's sessions/ layout is its own: on one machine it can be sessions/<tool>/<the tool's folder name>.

@@ -1,6 +1,8 @@
 """Redaction, the sweep, and the conversation model the importers share. Standard library only."""
+import base64
 import datetime
 import getpass
+import hashlib
 import json
 import os
 import re
@@ -25,6 +27,22 @@ def apply_config():
     [redact] never_sweep from the store's config.toml. Call it after store.configure()."""
     extra = {getpass.getuser(), MACHINE, *store.config_list('redact', 'never_sweep')}
     _NO_SWEEP.update(w.lower() for w in extra if isinstance(w, str) and w)
+    BLOCKED.clear()
+    BLOCKED.update(load_blocklist(store.STORE))
+
+
+def load_blocklist(folder):
+    """-> the fingerprints in the blocklist.json of the store FOLDER (spec 24): {fingerprint: reason}, edited by the
+    person. None there, or no store: empty. A list that cannot be read is an error, not an empty list: the
+    values in it would go unmasked."""
+    path = store.data_file(folder, 'blocklist.json', 'secretcheck_blocklist.json') if folder else ''
+    if not path or not os.path.exists(path):
+        return set()
+    with open(path, encoding='utf-8') as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict) or not all(isinstance(k, str) and re.fullmatch(r'[0-9a-f]{16}', k) for k in data):
+        raise ValueError(f'{path}: expected {{"<16 hex digits>": "reason", ...}}')
+    return set(data)
 
 
 def write_text(path, text, binary=False, mode=None):
@@ -70,6 +88,11 @@ _SECRET_PATTERNS = [
 ]
 _AUTH_HEADER = re.compile(r'(?i)(\bauthorization\s*["\']?\s*[:=]\s*["\']?(?:bearer|basic|token)\s+)([A-Za-z0-9._~+/=\-]{8,})')
 _BEARER = re.compile(r'(?i)(\bbearer\s+)([A-Za-z0-9._~+/=\-]{20,})')
+_BASIC = re.compile(r'(?i)(\bbasic[ \t]+)([A-Za-z0-9+/]{12,}={0,2})(?![A-Za-z0-9+/=])')
+# Fingerprints (sha256, 16 hex digits) of the person's secrets that no rule finds, from the store's blocklist.json
+BLOCKED = set()
+_RUN = re.compile(r'[^\s"\'`<>()\[\]{},;]+')
+_RUN_SEP = re.compile(r'[=:&?/@\\]')
 _URL_CREDS = re.compile(r'(\b[a-z][a-z0-9+.\-]*://[^/\s:@"\']+:)([^/\s@"\']+)(@)')
 _ASSIGN = re.compile(
     r'(?i)(\b[A-Za-z0-9_\-]*(password|passwd|passphrase|pass(?=\\?["\'\s:=])|pwd|masterauth|secret|token|api[_\-]?key|apikey'
@@ -346,6 +369,34 @@ def redact(text, hits=None):
     return text
 
 
+def _basic_password(value):
+    """-> the password of an HTTP Basic credential (base64 of user:password), or None when value is not one."""
+    try:
+        text = base64.b64decode(value + '=' * (-len(value) % 4), validate=True).decode('utf-8')
+    except ValueError:  # binascii.Error and UnicodeDecodeError are ValueErrors
+        return None
+    user, colon, password = text.partition(':')
+    if not (colon and user and password) or any(ord(c) < 32 or ord(c) == 127 for c in text):
+        return None
+    return password
+
+
+def _listed(text, note):
+    """Mask each candidate whose fingerprint is in BLOCKED: a run between quotes, brackets, commas and spaces,
+    that run without trailing . : \\, and its parts between = : & ? / @ \\ (spec 24)."""
+    def sub(m):
+        run = m.group(0)
+        found = [c for c in {run, run.rstrip('.:\\'), *_RUN_SEP.split(run)}
+                 if 6 <= len(c) <= 256 and hashlib.sha256(c.encode('utf-8')).hexdigest()[:16] in BLOCKED]
+        for c in sorted(found, key=len, reverse=True):
+            note('listed')
+            LEARNED.setdefault(c, 'listed')  # always learned: the person named it, whatever its shape
+            LEARNED_BY.setdefault(c, '_listed')
+            run = run.replace(c, '[REDACTED:listed]')
+        return run
+    return _RUN.sub(sub, text)
+
+
 def _redact_once(text, hits):
     if not text:
         return text
@@ -353,6 +404,9 @@ def _redact_once(text, hits):
     def note(kind):
         if hits is not None:
             hits.append(kind)
+
+    if BLOCKED:
+        text = _listed(text, note)
 
     for kind, pat in _SECRET_PATTERNS:
         def sub(m, kind=kind):
@@ -372,6 +426,16 @@ def _redact_once(text, hits):
         return m.group(1) + '[REDACTED:auth-header]'
     text = _AUTH_HEADER.sub(hdr, text)
     text = _BEARER.sub(hdr, text)
+
+    def basic(m):
+        password = _basic_password(m.group(2))
+        if password is None:
+            return m.group(0)  # "basic" before a word, or base64 that is no user:password
+        note('auth-header')
+        learn(m.group(2), 'auth-header', sure=True)
+        learn(password)
+        return m.group(1) + '[REDACTED:auth-header]'
+    text = _BASIC.sub(basic, text)
 
     def url(m):
         note('url-credentials')

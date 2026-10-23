@@ -3,6 +3,7 @@ plugin. Real git in temporary repos with a bare repo as the remote; core.hooksPa
 holding a pre-push that runs `python -m llmpro hook push-guard`. No real gitpro and no real home.
 
 Fake secrets are built at run time, so this file holds no string that looks like a real token."""
+import base64
 import hashlib
 import inspect
 import io
@@ -660,3 +661,20 @@ def test_uninstall_leaves_a_chain_to_it_did_not_write(guard, store, machine, fak
     cap = capsys.readouterr()
     assert path.read_text() == before
     assert 'llmpro did not write it; take it out by hand' in cap.err
+
+
+def test_a_listed_value_and_basic_are_stopped(repo, env, store):
+    listed = ''.join(['aB%c', 'D3eF', '%gHi', 'JkLm'])
+    basic = base64.b64encode(''.join(['someone@mail.example', ':', 'Kq7vR2mZ', 'p9Lw4xTn']).encode()).decode()
+    commit(repo, 'a.txt', f'["{listed}"]\n')
+    assert push(repo, 'origin', 'main', env=env).returncode == 0  # not listed yet
+    os.makedirs(os.path.join(store, '.agentspro'))
+    with open(os.path.join(store, '.agentspro', 'blocklist.json'), 'w') as fh:
+        json.dump({check.fp(listed): 'made up'}, fh)
+    sha = commit(repo, 'b.txt', f'one\n["{listed}"]\n')
+    r = push(repo, 'origin', 'main', env=env)
+    assert r.returncode != 0 and f'{sha[:7]} b.txt:2 [listed]' in r.stderr and listed not in r.stderr
+    sh('git', '-C', str(repo), 'reset', '-q', '--hard', 'HEAD~1')
+    sha = commit(repo, 'c.txt', f'"Basic {basic}"\n')
+    r = push(repo, 'origin', 'main', env=env)
+    assert r.returncode != 0 and f'{sha[:7]} c.txt:1 [auth-header]' in r.stderr and basic not in r.stderr

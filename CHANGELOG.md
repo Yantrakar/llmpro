@@ -4,6 +4,24 @@ All notable changes to llmpro (developed as agentspro). The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). A release needs a section
 `## X.Y.Z (YYYY-MM-DD)` for its version; see docs/releasing.md.
 
+## 0.1.3 (2026-10-23)
+
+### Fixed
+
+- HTTP Basic credentials (`Basic` and base64 of `user:password`) are masked as
+  `[REDACTED:auth-header]` wherever they appear, not only after an `Authorization`
+  key, and the password inside is masked too. `llmpro check` and the push guard
+  report them. A sync stopped by the check on one such line now goes through.
+
+### Added
+
+- `.agentspro/blocklist.json` in the store, `{"<fingerprint>": "reason"}` like the
+  allowlist, for a secret no rule can find. The sync masks a listed value as
+  `[REDACTED:listed]`, and `llmpro check` and the push guard report it. The file is
+  committed and reaches every machine; a fingerprint of a short or common password
+  can be guessed back, so list only long random values. A new or changed list makes
+  the next sync redact every file again, and `check --history` check every blob again.
+
 ## 0.1.2 (2026-10-23)
 
 ### Fixed

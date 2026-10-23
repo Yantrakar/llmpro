@@ -21,6 +21,10 @@ The pre-commit and pre-merge-commit hooks in the store run it. A commit that fai
 
 A false positive goes into `.agentspro/allowlist.json` in the store, by fingerprint, with a reason. Only add one when the user agrees that the value is not a secret.
 
+## Secrets no rule finds
+
+A secret with no shape a rule can find (a random value with nothing around it that says it is a secret) goes into `.agentspro/blocklist.json` in the store, the same way: `{"<fingerprint>": "reason"}`. The redactor then masks it as `[REDACTED:listed]` and the check and the push guard report it. The file is committed and reaches every machine, and a fingerprint of a short or common password can be found again by trying candidates, so list only long random values. Compute the fingerprint without printing the value, and let the user add the line.
+
 ## The push guard
 
 The push guard checks what a push adds to any repo, not only the store. It is a `pre-push` script that gitpro's global hook runs through `[guard] chain_to` in the user's `~/.config/gitpro.toml`. `llmpro setup` writes the script, adds the `chain_to` line to that file (keeping a copy), and runs `gitpro setup -y --agent none`. If the file is one it cannot edit safely, it prints the line for the user to add. Tell the user to run `llmpro setup`, not `gitpro setup` on its own.

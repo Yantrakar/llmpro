@@ -19,6 +19,7 @@ Exit status 1 if anything is found that is not allowlisted.
 """
 import argparse
 import dataclasses
+import base64
 import hashlib
 import json
 import math
@@ -463,9 +464,9 @@ def part1(files, allow, show_context, jobs=1):
     items = sorted(files.items(), key=lambda kv: -len(kv[1]))  # the largest first, so no worker ends last alone
     if jobs > 1 and len(items) > 1:
         with Pool(jobs) as pool:
-            results = dict(zip((rel for rel, _ in items), pool.map(scan_patterns, (t for _, t in items), chunksize=1)))
+            results = dict(zip((rel for rel, _ in items), pool.map(scan_part1, (t for _, t in items), chunksize=1)))
     else:
-        results = {rel: scan_patterns(text) for rel, text in items}
+        results = {rel: scan_part1(text) for rel, text in items}
     for rel, text in sorted(files.items()):
         for kind, v, off in results[rel]:
             if fp(v) in allow:
@@ -481,6 +482,52 @@ def part1(files, allow, show_context, jobs=1):
 RUN = re.compile(r'[^\s"\'`<>()\[\]{},;]+')
 LONG_RUN = re.compile(r'[A-Za-z0-9_\-+/=.~]{12,}')
 SECRETS, PIECES = {}, {}  # filled in the parent before the pool forks; read by match_file
+
+# Part 1 rules that the collection from raw sources does not use, so RULES_VERSION and the leak cache stay as
+# they are (spec 24).
+BASIC = re.compile(r'(?i)\bbasic[ \t]+([A-Za-z0-9+/]{12,}={0,2})(?![A-Za-z0-9+/=])')
+RUN_SEP = re.compile(r'[=:&?/@\\]')
+BLOCKED = set()  # fingerprints from the store's blocklist.json; set in the parent before a pool forks
+
+
+def load_block(store):
+    """-> the fingerprints of the store's blocklist.json ({fingerprint: reason}, edited by the person; spec 24)."""
+    path = data_file(store, 'blocklist.json', 'secretcheck_blocklist.json')
+    if not os.path.exists(path):
+        return set()
+    data = json.load(open(path, encoding='utf-8'))
+    if not isinstance(data, dict) or not all(isinstance(k, str) and re.fullmatch(r'[0-9a-f]{16}', k) for k in data):
+        raise ValueError(f'{path}: expected {{"<16 hex digits>": "reason", ...}}')
+    return set(data)
+
+
+def basic_credential(v):
+    """True for base64 of user:password, as in an HTTP Basic header."""
+    try:
+        text = base64.b64decode(v + '=' * (-len(v) % 4), validate=True).decode('utf-8')
+    except ValueError:
+        return False
+    user, colon, password = text.partition(':')
+    return bool(colon and user and password) and not any(ord(c) < 32 or ord(c) == 127 for c in text)
+
+
+MORE_VERSION = 1  # raise when scan_more finds something it did not, so history blobs passed before are read again
+
+
+def scan_more(text):
+    """-> [(kind, value, offset)]: HTTP Basic credentials, and values whose fingerprint is in BLOCKED."""
+    hits = [('auth-header', m.group(1), m.start(1)) for m in BASIC.finditer(text) if basic_credential(m.group(1))]
+    if BLOCKED:
+        for m in RUN.finditer(text):
+            run = m.group(0)
+            for c in {run, run.rstrip('.:\\'), *RUN_SEP.split(run)}:
+                if 6 <= len(c) <= 256 and fp(c) in BLOCKED:
+                    hits.append(('listed', c, m.start() + run.find(c)))
+    return hits
+
+
+def scan_part1(text):
+    return scan_patterns(text) + scan_more(text)
 
 
 def context(text, i):
@@ -850,12 +897,13 @@ def part2_cached(store, files, allow, jobs, show_context, more=None, quiet=False
 
 
 # ---- history blobs with a cache ------------------------------------------------------------------
-# A blob never changes, so one that passed both checks passes them again, unless the tool version, the allowlist
-# or the cache key changed, or a secret value was collected since that it was not checked for. The cache
-# keeps the blob ids and the keyed hashes of the values checked for, in .git/agentspro/blobs.json.
+# A blob never changes, so one that passed both checks passes them again, unless the tool version, the allowlist,
+# scan_more's rules, the blocklist or the cache key changed, or a secret value was collected since that it was not
+# checked for. The cache keeps the blob ids and the keyed hashes of the values checked for, in .git/agentspro/blobs.json.
 def blob_cache_key(allow):
+    more = f'{MORE_VERSION}+' + hashlib.sha256('\n'.join(sorted(BLOCKED)).encode()).hexdigest()[:16]
     return {'version': CACHE_VERSION, 'key': hashlib.sha256(KEY).hexdigest()[:16],
-            'allow': hashlib.sha256(json.dumps(allow, sort_keys=True).encode()).hexdigest()[:16]}
+            'allow': hashlib.sha256(json.dumps(allow, sort_keys=True).encode()).hexdigest()[:16], 'more': more}
 
 
 def load_blob_cache(cdir, allow):
@@ -898,9 +946,11 @@ def scan_texts(store, texts, jobs=1, deadline=None, late=None):
     allowlist. -> [Hit], sorted. Prints nothing and does not write the blob cache. jobs=1 starts no pool.
     deadline and late: as in part2_cached; the pattern scan always runs in full."""
     allow = load_allow(store)
+    BLOCKED.clear()
+    BLOCKED.update(load_block(store))
     hits = []
     for label, text in sorted(texts.items()):
-        for kind, v, off in scan_patterns(text):
+        for kind, v, off in scan_part1(text):
             if fp(v) not in allow:
                 hits.append(Hit(label, off, kind, mask(v), 'pattern'))
     sink = []
@@ -924,6 +974,8 @@ def run(store, all=False, staged=False, history=False, jobs=None, part=None, con
     late = [] if late is None else late
     jobs = jobs or os.cpu_count() or 4
     allow = load_allow(store)
+    BLOCKED.clear()
+    BLOCKED.update(load_block(store))
     # sessions/ (raw/ before 2026-10-08) holds the tools' unredacted logs; git must never see them
     raw = [p for p in git(store, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', 'sessions', 'raw')
            .decode().split('\0') if p]

@@ -67,17 +67,25 @@ def code_key():
 CODE = code_key()
 
 
+def noop_code():
+    """CODE, and a hash of the listed fingerprints when there are any (spec 24): a file skipped before is redacted
+    again when the list changes. Call it after apply_config()."""
+    if not common.BLOCKED:
+        return CODE
+    return CODE + '+' + hashlib.sha256('\n'.join(sorted(common.BLOCKED)).encode()).hexdigest()[:16]
+
+
 def load_noop(store):
     try:
         cache = json.load(open(os.path.join(store, NOOP_CACHE), encoding='utf-8'))
-        return set(cache['hashes']) if cache.get('code') == CODE else set()
+        return set(cache['hashes']) if cache.get('code') == noop_code() else set()
     except (OSError, ValueError, KeyError):
         return set()
 
 
 def save_noop(store, hashes):
     if os.path.isdir(os.path.join(store, '.git')):
-        write_text(os.path.join(store, NOOP_CACHE), json.dumps({'code': CODE, 'hashes': sorted(hashes)}),
+        write_text(os.path.join(store, NOOP_CACHE), json.dumps({'code': noop_code(), 'hashes': sorted(hashes)}),
                    mode=0o600)
 
 
