@@ -196,7 +196,9 @@ STOP = {'password', 'passwd', 'secret', 'secrets', 'token', 'tokens', 'required'
 NOT_SECRET_PARTS = ('your', 'example', 'placeholder', 'changeme', 'dummy', 'xxxx', 'redacted', '<', '>', '{{', '}}',
                     '${', 'process.env', 'environ', 'getenv', 'config.', 'settings.', 'self.', 'this.', 'args.',
                     'secrets.', 'vault_', '***', '...', '…', 'http://', 'https://')
-FILE_LIKE = re.compile(r'(?i)[\w.\-]+\.(?:txt|pem|key|json|ya?ml|env|toml|cfg|conf|ini|sh|py|md|crt|pub|gpg|asc|db|sqlite)')
+# Web files (page.html) since 2026-10-24: a site's link paths were taken for tokens under Copilot's staticTokens.
+FILE_LIKE = re.compile(r'(?i)[\w.\-]+\.(?:txt|pem|key|json|ya?ml|env|toml|cfg|conf|ini|sh|py|md|crt|pub|gpg|asc|db|sqlite'
+                       r'|html?|css|m?js|jsx|tsx?|svg)')
 
 
 def classes(v):
@@ -620,8 +622,8 @@ def print_leaks(rows, show_context):
 # Raised whenever a change to the rules here can change what is collected from a raw source, so a cache
 # collected under the old rules is dropped. Unlike REDACT_VERSION it is not recorded in the store.
 # tests/test_push_guard.py pins a hash of the collection code next to it, so a change there is not missed.
-RULES_VERSION = 4  # 2: a run is judged by the whole base64 token it is part of; 3: PGP public key blocks;
-# 4: module._private names (2026-10-18)
+RULES_VERSION = 5  # 2: a run is judged by the whole base64 token it is part of; 3: PGP public key blocks;
+# 4: module._private names (2026-10-18); 5: web file names, like page.html (2026-10-24)
 # The cache is kept across releases: only the rules change what is collected (this file imports nothing from
 # redact.py). Keyed on the release, every upgrade had the next check collect every raw source again (2026-10-22).
 CACHE_VERSION = f'rules{RULES_VERSION}'

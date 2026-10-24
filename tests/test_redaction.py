@@ -186,6 +186,14 @@ class SecretcheckRules(unittest.TestCase):
         self.assertFalse(secretcheck.plausible('pkg.mod__dunder', 'quoted-assignment'))
         self.assertTrue(secretcheck.plausible('Zq8vL2._mWpX3nR7', 'quoted-assignment'))
 
+    def test_a_web_file_name_is_no_secret(self):
+        # spec 25: Copilot keeps a site's link paths under staticTokens and possiblePaths
+        for v in ('products.html', 'webinars.html', 'index.htm', 'app.min.js', 'style.css', 'Page.tsx', 'logo.svg'):
+            self.assertFalse(secretcheck.plausible(v), v)
+            self.assertFalse(secretcheck.secret_field('staticTokens', v), v)
+        self.assertTrue(secretcheck.secret_field('staticTokens', 'Zq8vL2mWpX3nR7.Kd9'))
+        self.assertTrue(secretcheck.plausible('Zq8vL2mWp.jsX3nR7'))
+
     def test_public_keys_and_api_ids_are_no_hits(self):
         body = base64.b64encode(b'\0\0\0\x0bssh-ed25519' + hashlib.sha256(b'pub').digest()).decode()
         text = f'auth key: toolu_01QwErTy8uIoPaSdFgHjKlZx, authorized key ssh-ed25519 {body} me@host'

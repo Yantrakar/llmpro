@@ -256,7 +256,7 @@ def test_guard_is_fast_on_a_small_push(repo, env, monkeypatch):
 
 # ---- the leak cache across releases, and the guard's time budget (spec 22) -----------------------------
 # sha256 of the code that decides what is collected and how it is hashed, for each RULES_VERSION.
-RULES_PIN = {4: 'b64a26c303fc7a23af12dab9a792677114a16f05449687f8b37ce69853637ad3'}
+RULES_PIN = {5: 'd592ead68b4e6520e9eadb62a556034965476446b7909f1f6c05503a70998650'}
 
 
 def rules_code_hash():
