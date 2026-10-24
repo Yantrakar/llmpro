@@ -15,6 +15,7 @@ gitpro's code. `01-design.md` is the design of agentspro itself (2026-10-16). Th
 | `22-push-guard-budget.md` | Round 6 (2026-10-22): the leak cache survives a release; the push guard keeps to a time budget |
 | `23-time-limits-and-caches.md` | Round 6 (2026-10-23): `check --budget` and a time limit for the MCP check; one budget for the agent hook; the sync's no-op cache survives a release and is private |
 | `24-basic-auth-and-blocklist.md` | Round 7 (2026-10-23): HTTP Basic credentials are masked and found; a blocklist of fingerprints for secrets no rule finds |
+| `25-web-file-names.md` | Round 8 (2026-10-24): a web file name (`page.html`) is not collected as a secret |
 
 Each package file is self-contained: an agent that has read this file, `00-existing.md`,
 `DECISIONS.md` and its own package file has everything it needs. Where a package uses something an
