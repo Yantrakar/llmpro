@@ -4,6 +4,16 @@ All notable changes to llmpro (developed as agentspro). The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). A release needs a section
 `## X.Y.Z (YYYY-MM-DD)` for its version; see docs/releasing.md.
 
+## 0.1.4 (2026-10-27)
+
+### Fixed
+
+- A web file name, such as `page.html`, `app.min.js` or `logo.svg`, is no longer taken for a
+  secret. `llmpro check` and the push guard reported one found under a key like
+  `staticTokens` in Copilot's logs. The rules for what is collected changed, so the first
+  check after upgrading reads every raw log again once. An allowlist entry made for such a
+  name is no longer needed.
+
 ## 0.1.3 (2026-10-23)
 
 ### Fixed
